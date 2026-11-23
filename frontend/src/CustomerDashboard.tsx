@@ -22,6 +22,7 @@ import {
 } from './services/accountService'
 
 import './CustomerDashboard.css'
+import CustomerTransactions from './CustomerTransactions'
 
 interface CustomerDashboardProps {
   onLogout: () => void
@@ -406,6 +407,7 @@ function CustomerDashboard({ onLogout }: CustomerDashboardProps) {
           )}
         </section>
 
+	<CustomerTransactions />
         <footer className="customer-footer">
           <span>© 2026 FinSentinel. Secure Digital Banking.</span>
           <span>

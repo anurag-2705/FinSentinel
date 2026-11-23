@@ -7,6 +7,9 @@ import com.finsentinel.account.repository.AccountRepository;
 import com.finsentinel.beneficiary.entity.Beneficiary;
 import com.finsentinel.beneficiary.entity.BeneficiaryStatus;
 import com.finsentinel.beneficiary.repository.BeneficiaryRepository;
+import com.finsentinel.fraud.dto.FraudAssessmentResponse;
+import com.finsentinel.fraud.entity.FraudDecision;
+import com.finsentinel.fraud.service.FraudDetectionService;
 import com.finsentinel.transaction.dto.BeneficiaryTransferRequest;
 import com.finsentinel.transaction.dto.TransactionResponse;
 import com.finsentinel.transaction.entity.FinancialTransaction;
@@ -28,6 +31,7 @@ public class BeneficiaryTransferService {
     private final AccountBalanceService accountBalanceService;
     private final LedgerPostingService ledgerPostingService;
     private final TransactionReferenceGenerator referenceGenerator;
+    private final FraudDetectionService fraudDetectionService;
 
     public BeneficiaryTransferService(
             AccountRepository accountRepository,
@@ -35,7 +39,8 @@ public class BeneficiaryTransferService {
             FinancialTransactionRepository transactionRepository,
             AccountBalanceService accountBalanceService,
             LedgerPostingService ledgerPostingService,
-            TransactionReferenceGenerator referenceGenerator
+            TransactionReferenceGenerator referenceGenerator,
+            FraudDetectionService fraudDetectionService
     ) {
         this.accountRepository = accountRepository;
         this.beneficiaryRepository = beneficiaryRepository;
@@ -43,6 +48,7 @@ public class BeneficiaryTransferService {
         this.accountBalanceService = accountBalanceService;
         this.ledgerPostingService = ledgerPostingService;
         this.referenceGenerator = referenceGenerator;
+        this.fraudDetectionService = fraudDetectionService;
     }
 
     @Transactional
@@ -143,6 +149,29 @@ public class BeneficiaryTransferService {
         FinancialTransaction savedTransaction =
                 transactionRepository.saveAndFlush(transaction);
 
+        // Assess fraud risk before posting ledger entries.
+        FraudAssessmentResponse assessment =
+                fraudDetectionService.assessTransaction(
+                        savedTransaction.getId()
+                );
+
+        // HOLD: Keep the transaction pending for analyst review.
+        if (assessment.decision() == FraudDecision.HOLD) {
+            return TransactionResponse.from(savedTransaction);
+        }
+
+        // BLOCK: Reject without posting ledger entries.
+        if (assessment.decision() == FraudDecision.BLOCK) {
+
+            savedTransaction.setStatus(TransactionStatus.FAILED);
+
+            FinancialTransaction failedTransaction =
+                    transactionRepository.save(savedTransaction);
+
+            return TransactionResponse.from(failedTransaction);
+        }
+
+        // ALLOW: Post the beneficiary transfer to the ledger.
         ledgerPostingService.postBeneficiaryTransfer(
                 savedTransaction,
                 sourceAccount

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import Login from './Login'
 import CustomerDashboard from './CustomerDashboard'
+
 import {
   ShieldCheck,
   LayoutDashboard,
@@ -38,11 +39,11 @@ import {
   type FraudDashboardSummary,
   type FraudAlert,
   type FraudAlertPage,
+  type FraudAlertReview,
   type AnalystWorkload,
 } from './services/dashboardService'
 
 import './App.css'
-
 
 function getStoredRoles(): string[] {
   try {
@@ -57,6 +58,7 @@ function getStoredRoles(): string[] {
     return []
   }
 }
+
 const chartData = [
   { day: 'Mon', transactions: 120, flagged: 8 },
   { day: 'Tue', transactions: 180, flagged: 12 },
@@ -69,110 +71,199 @@ const chartData = [
 
 function App() {
   const [activeNav, setActiveNav] = useState('Dashboard')
+
   const [isAuthenticated, setIsAuthenticated] = useState(
-  Boolean(localStorage.getItem('finsentinel_access_token'))
-)
-const [userRoles, setUserRoles] = useState<string[]>(getStoredRoles)
+    Boolean(localStorage.getItem('finsentinel_access_token'))
+  )
+
+  const [userRoles, setUserRoles] = useState<string[]>(getStoredRoles)
+
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('ALL')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const [summary, setSummary] = useState<FraudDashboardSummary | null>(null)
+
+  const [summary, setSummary] =
+    useState<FraudDashboardSummary | null>(null)
+
   const [dashboardAlerts, setDashboardAlerts] = useState<FraudAlert[]>([])
-  const [selectedAlert, setSelectedAlert] = useState<FraudAlert | null>(null)
+
+  const [selectedAlert, setSelectedAlert] =
+    useState<FraudAlert | null>(null)
+
+  const [reviewHistory, setReviewHistory] =
+    useState<FraudAlertReview[]>([])
+
   const [reviewNotes, setReviewNotes] = useState('')
-const [actionLoading, setActionLoading] = useState(false)
-const [actionMessage, setActionMessage] = useState('')
-  const [alertPage, setAlertPage] = useState<FraudAlertPage | null>(null)
-  const [analystWorkload, setAnalystWorkload] = useState<AnalystWorkload[]>([])
+
+  const [actionLoading, setActionLoading] = useState(false)
+  const [actionMessage, setActionMessage] = useState('')
+
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [detailError, setDetailError] = useState('')
+
+  const [alertPage, setAlertPage] =
+    useState<FraudAlertPage | null>(null)
+
+  const [analystWorkload, setAnalystWorkload] =
+    useState<AnalystWorkload[]>([])
+
   const [loading, setLoading] = useState(true)
   const [apiError, setApiError] = useState('')
+
   const [refreshKey, setRefreshKey] = useState(0)
-   useEffect(() => {
-  const isAnalyst =
-    userRoles.includes('FRAUD_ANALYST') ||
-    userRoles.includes('ADMIN')
 
-  if (!isAuthenticated || !isAnalyst) {
-    setLoading(false)
-    return
-  }
+  // Load dashboard information from backend.
+  useEffect(() => {
+    const isAnalyst =
+      userRoles.includes('FRAUD_ANALYST') ||
+      userRoles.includes('ADMIN')
 
-  const loadDashboard = async () => {
+    if (!isAuthenticated || !isAnalyst) {
+      setLoading(false)
+      return
+    }
+
+    const loadDashboard = async () => {
+      try {
+        setLoading(true)
+        setApiError('')
+
+        const [summaryData, workloadData, alertsData] =
+          await Promise.all([
+            dashboardService.getSummary(),
+
+            dashboardService.getAnalystWorkload(),
+
+            dashboardService.getAlerts({
+              page: 0,
+              size: 10,
+              sortBy: 'createdAt',
+              direction: 'DESC',
+            }),
+          ])
+
+        setSummary(summaryData)
+        setAnalystWorkload(workloadData)
+        setAlertPage(alertsData)
+        setDashboardAlerts(alertsData.alerts)
+
+      } catch (error) {
+        console.error('Dashboard API error:', error)
+
+        setApiError(
+          'Unable to load dashboard data. Please check your login.'
+        )
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadDashboard()
+  }, [refreshKey, isAuthenticated, userRoles])
+
+  // Fetch complete alert details and review history.
+  const handleViewAlert = async (alert: FraudAlert) => {
+    setSelectedAlert(alert)
+    setReviewNotes('')
+    setReviewHistory([])
+    setActionMessage('')
+    setDetailError('')
+
+    setDetailLoading(true)
+    setHistoryLoading(true)
+
     try {
-      setLoading(true)
-      setApiError('')
+      const [alertDetails, history] = await Promise.all([
+        dashboardService.getAlert(alert.alertId),
+        dashboardService.getReviewHistory(alert.alertId),
+      ])
 
-      const [summaryData, workloadData, alertsData] =
-        await Promise.all([
-          dashboardService.getSummary(),
-          dashboardService.getAnalystWorkload(),
-          dashboardService.getAlerts({
-            page: 0,
-            size: 10,
-            sortBy: 'createdAt',
-            direction: 'DESC',
-          }),
-        ])
-
-      setSummary(summaryData)
-      setAnalystWorkload(workloadData)
-      setAlertPage(alertsData)
-      setDashboardAlerts(alertsData.alerts)
+      setSelectedAlert(alertDetails)
+      setReviewHistory(history)
 
     } catch (error) {
-      console.error('Dashboard API error:', error)
-      setApiError('Unable to load dashboard data. Please check your login.')
+      console.error('Unable to load alert details:', error)
+
+      setDetailError(
+        'Unable to load complete alert details or review history.'
+      )
     } finally {
-      setLoading(false)
+      setDetailLoading(false)
+      setHistoryLoading(false)
     }
   }
 
-  loadDashboard()
-}, [refreshKey, isAuthenticated, userRoles])
-
+  // Assign, approve, or reject an alert.
   const handleAlertAction = async (
-  action: 'assign' | 'approve' | 'reject'
-) => {
-  if (!selectedAlert) return
+    action: 'assign' | 'approve' | 'reject'
+  ) => {
+    if (!selectedAlert) return
 
-  if (!reviewNotes.trim()) {
-    setActionMessage('Please enter review notes first.')
-    return
-  }
-
-  try {
-    setActionLoading(true)
-    setActionMessage('')
-
-    if (action === 'assign') {
-      await dashboardService.assignAlert(selectedAlert.alertId, reviewNotes)
-    } else if (action === 'approve') {
-      await dashboardService.approveAlert(selectedAlert.alertId, reviewNotes)
-    } else {
-      await dashboardService.rejectAlert(selectedAlert.alertId, reviewNotes)
+    // Assignment does not require notes.
+    // Approval and rejection require investigation notes.
+    if (action !== 'assign' && !reviewNotes.trim()) {
+      setActionMessage('Please enter review notes first.')
+      return
     }
 
-    setActionMessage(`Alert ${action}ed successfully.`)
-    setReviewNotes('')
-    setSelectedAlert(null)
-    setRefreshKey((current) => current + 1)
-  } catch (error) {
-    console.error('Alert action failed:', error)
-    setActionMessage('Action failed. Check the alert status and assignment.')
-  } finally {
-    setActionLoading(false)
+    try {
+      setActionLoading(true)
+      setActionMessage('')
+      setDetailError('')
+
+      if (action === 'assign') {
+        await dashboardService.assignAlert(selectedAlert.alertId)
+
+      } else if (action === 'approve') {
+        await dashboardService.approveAlert(
+          selectedAlert.alertId,
+          reviewNotes.trim()
+        )
+
+      } else {
+        await dashboardService.rejectAlert(
+          selectedAlert.alertId,
+          reviewNotes.trim()
+        )
+      }
+
+      const successMessages = {
+        assign: 'Alert assigned successfully.',
+        approve: 'Transaction approved successfully.',
+        reject: 'Transaction rejected successfully.',
+      }
+
+      setActionMessage(successMessages[action])
+
+      setReviewNotes('')
+      setSelectedAlert(null)
+      setReviewHistory([])
+
+      setRefreshKey((current) => current + 1)
+
+    } catch (error) {
+      console.error('Alert action failed:', error)
+
+      setActionMessage(
+        'Action failed. Check the alert status, assignment, and review notes.'
+      )
+    } finally {
+      setActionLoading(false)
+    }
   }
-}
+
+  // Filter alerts.
   const filteredAlerts = dashboardAlerts.filter((alert) => {
-  const matchesSearch = alert.transactionReference
-    .toLowerCase()
-    .includes(search.toLowerCase())
+    const matchesSearch = alert.transactionReference
+      .toLowerCase()
+      .includes(search.toLowerCase())
 
-  const matchesStatus =
-    statusFilter === 'ALL' || alert.alertStatus === statusFilter
+    const matchesStatus =
+      statusFilter === 'ALL' || alert.alertStatus === statusFilter
 
-  return matchesSearch && matchesStatus
-})
+    return matchesSearch && matchesStatus
+  })
 
   const navigation = [
     { label: 'Dashboard', icon: LayoutDashboard },
@@ -181,52 +272,70 @@ const [actionMessage, setActionMessage] = useState('')
     { label: 'Analysts', icon: Users },
     { label: 'Settings', icon: Settings },
   ]
-const handleLogout = () => {
-  localStorage.removeItem('finsentinel_access_token')
-  localStorage.removeItem('finsentinel_refresh_token')
-  localStorage.removeItem('finsentinel_user_roles')
-  localStorage.removeItem('finsentinel_user_name')
 
-  setUserRoles([])
-  setIsAuthenticated(false)
-}
+  // Logout.
+  const handleLogout = () => {
+    localStorage.removeItem('finsentinel_access_token')
+    localStorage.removeItem('finsentinel_refresh_token')
+    localStorage.removeItem('finsentinel_user_roles')
+    localStorage.removeItem('finsentinel_user_name')
 
-if (!isAuthenticated) {
-  return (
-    <Login
-      onLogin={() => {
-        setUserRoles(getStoredRoles())
-        setIsAuthenticated(true)
-        setRefreshKey((current) => current + 1)
-      }}
-    />
-  )
-}
+    setUserRoles([])
+    setIsAuthenticated(false)
+  }
 
-if (userRoles.includes('CUSTOMER')) {
-  return <CustomerDashboard onLogout={handleLogout} />
-}
+  // Authentication routing.
+  if (!isAuthenticated) {
+    return (
+      <Login
+        onLogin={() => {
+          setUserRoles(getStoredRoles())
+          setIsAuthenticated(true)
+          setRefreshKey((current) => current + 1)
+        }}
+      />
+    )
+  }
 
+  // Customer dashboard.
+// Analyst and Admin roles take priority over Customer.
 if (
+  userRoles.includes('CUSTOMER') &&
   !userRoles.includes('FRAUD_ANALYST') &&
   !userRoles.includes('ADMIN')
 ) {
-  return (
-    <div style={{ padding: '40px', textAlign: 'center' }}>
-      <h2>Access Denied</h2>
-      <p>Your account does not have permission to access this dashboard.</p>
-      <button onClick={handleLogout}>Logout</button>
-    </div>
-  )
+  return <CustomerDashboard onLogout={handleLogout} />
 }
+
+  // Analyst authorization.
+  if (
+    !userRoles.includes('FRAUD_ANALYST') &&
+    !userRoles.includes('ADMIN')
+  ) {
+    return (
+      <div style={{ padding: '40px', textAlign: 'center' }}>
+        <h2>Access Denied</h2>
+
+        <p>
+          Your account does not have permission to access this dashboard.
+        </p>
+
+        <button onClick={handleLogout}>Logout</button>
+      </div>
+    )
+  }
 
   return (
     <div className="app-container">
+
+      {/* Sidebar */}
       <aside className={`sidebar ${mobileMenuOpen ? 'sidebar-open' : ''}`}>
+
         <div className="brand">
           <div className="brand-icon">
             <ShieldCheck size={25} />
           </div>
+
           <div>
             <h2>FinSentinel</h2>
             <span>INTELLIGENT BANKING</span>
@@ -251,9 +360,13 @@ if (
                 }}
               >
                 <Icon size={19} />
+
                 <span>{item.label}</span>
+
                 {item.label === 'Fraud Alerts' && (
-                  <span className="nav-badge">2</span>
+                  <span className="nav-badge">
+                    {summary?.openAlerts ?? 0}
+                  </span>
                 )}
               </button>
             )
@@ -261,8 +374,10 @@ if (
         </nav>
 
         <div className="sidebar-bottom">
+
           <div className="system-status">
             <span className="online-dot"></span>
+
             <div>
               <strong>System operational</strong>
               <span>All services running</span>
@@ -271,18 +386,26 @@ if (
 
           <div className="profile">
             <div className="avatar">FA</div>
+
             <div className="profile-info">
               <strong>Fraud Analyst</strong>
               <span>Administrator</span>
             </div>
+
             <ChevronDown size={17} />
           </div>
+
         </div>
       </aside>
 
+      {/* Main content */}
       <main className="main-content">
+
+        {/* Topbar */}
         <header className="topbar">
+
           <div className="topbar-left">
+
             <button
               className="mobile-menu-button"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -294,14 +417,19 @@ if (
               <div className="breadcrumb">
                 Workspace <span>/</span> {activeNav}
               </div>
+
               <h1>{activeNav}</h1>
             </div>
+
           </div>
 
           <div className="topbar-actions">
+
             <div className="global-search">
               <Search size={17} />
+
               <input placeholder="Search anything..." />
+
               <span>⌘ K</span>
             </div>
 
@@ -314,102 +442,292 @@ if (
               <div className="avatar">FA</div>
               <ChevronDown size={16} />
             </div>
+
           </div>
         </header>
 
+        {/* Dashboard content */}
         <div className="dashboard-content">
+
           {apiError && (
-  <div role="alert" className="api-error">
-    {apiError}
-  </div>
-)}
-{analystWorkload.length > 0 && (
-  <div className="panel" style={{ marginBottom: '20px', padding: '16px' }}>
-    <h3>Analyst Workload</h3>
+            <div role="alert" className="api-error">
+              {apiError}
+            </div>
+          )}
 
-    {analystWorkload.map((analyst) => (
-      <p key={analyst.analystId}>
-        {analyst.analystEmail} — {analyst.totalAssignedAlerts} assigned alerts,
-        {' '}{analyst.openAssignedAlerts} open
-      </p>
-    ))}
-  </div>
-)}
-{selectedAlert && (
-  <div className="panel" style={{ padding: '20px', marginBottom: '20px' }}>
-    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-      <h3>Fraud Alert Details</h3>
+          {actionMessage && (
+            <div role="status" className="api-error">
+              {actionMessage}
+            </div>
+          )}
 
-      <button
-        className="secondary-button"
-        onClick={() => setSelectedAlert(null)}
-      >
-        Close
-      </button>
-    </div>
+          {/* Analyst workload */}
+          {analystWorkload.length > 0 && (
+            <div
+              className="panel"
+              style={{ marginBottom: '20px', padding: '16px' }}
+            >
+              <h3>Analyst Workload</h3>
 
-    <p><strong>Transaction Reference:</strong> {selectedAlert.transactionReference}</p>
-    <p><strong>Transaction Type:</strong> {selectedAlert.transactionType}</p>
-    <p><strong>Amount:</strong> ₹{selectedAlert.amount.toLocaleString('en-IN')}</p>
-    <p><strong>Risk Score:</strong> {selectedAlert.riskScore}/100</p>
-    <p><strong>Decision:</strong> {selectedAlert.decision}</p>
-    <p><strong>Transaction Status:</strong> {selectedAlert.transactionStatus}</p>
-    <p><strong>Alert Status:</strong> {selectedAlert.alertStatus}</p>
-    <p><strong>Reason:</strong> {selectedAlert.assessmentReason}</p>
-    <p><strong>Assigned Analyst:</strong> {selectedAlert.assignedAnalystEmail ?? 'Unassigned'}</p>
-    <hr style={{ margin: '20px 0', borderColor: '#334155' }} />
+              {analystWorkload.map((analyst) => (
+                <p key={analyst.analystId}>
+                  {analyst.analystEmail} —{' '}
+                  {analyst.totalAssignedAlerts} assigned alerts,{' '}
+                  {analyst.openAssignedAlerts} open
+                </p>
+              ))}
+            </div>
+          )}
 
-<h4>Analyst Review</h4>
+          {/* Selected alert details */}
+          {selectedAlert && (
+            <div
+              className="panel"
+              style={{
+                padding: '20px',
+                marginBottom: '20px',
+              }}
+            >
 
-<textarea
-  value={reviewNotes}
-  onChange={(event) => setReviewNotes(event.target.value)}
-  placeholder="Enter your investigation notes..."
-  maxLength={2000}
-  rows={4}
-  style={{
-    width: '100%',
-    padding: '12px',
-    borderRadius: '8px',
-    marginBottom: '12px',
-    boxSizing: 'border-box',
-  }}
-/>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: '10px',
+                }}
+              >
+                <h3>Fraud Alert Details</h3>
 
-{actionMessage && (
-  <p role="status">{actionMessage}</p>
-)}
+                <button
+                  className="secondary-button"
+                  onClick={() => {
+                    setSelectedAlert(null)
+                    setReviewHistory([])
+                    setDetailError('')
+                    setActionMessage('')
+                  }}
+                >
+                  Close
+                </button>
+              </div>
 
-<div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-  <button
-    className="secondary-button"
-    disabled={actionLoading}
-    onClick={() => handleAlertAction('assign')}
-  >
-    Assign to Me
-  </button>
+              {detailLoading ? (
+                <p>Loading alert details...</p>
+              ) : (
+                <>
 
-  <button
-    className="secondary-button"
-    disabled={actionLoading || selectedAlert.decision !== 'HOLD'}
-    onClick={() => handleAlertAction('approve')}
-  >
-    Approve Transaction
-  </button>
+                  <p>
+                    <strong>Transaction Reference:</strong>{' '}
+                    {selectedAlert.transactionReference}
+                  </p>
 
-  <button
-    className="secondary-button"
-    disabled={actionLoading || selectedAlert.decision !== 'HOLD'}
-    onClick={() => handleAlertAction('reject')}
-  >
-    Reject Transaction
-  </button>
-</div>
-  </div>
-)}
+                  <p>
+                    <strong>Transaction ID:</strong>{' '}
+                    {selectedAlert.transactionId}
+                  </p>
+
+                  <p>
+                    <strong>Transaction Type:</strong>{' '}
+                    {selectedAlert.transactionType}
+                  </p>
+
+                  <p>
+                    <strong>Amount:</strong>{' '}
+                    {selectedAlert.currency}{' '}
+                    {selectedAlert.amount.toLocaleString('en-IN', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </p>
+
+                  <p>
+                    <strong>Risk Score:</strong>{' '}
+                    {selectedAlert.riskScore}/100
+                  </p>
+
+                  <p>
+                    <strong>Decision:</strong>{' '}
+                    {selectedAlert.decision}
+                  </p>
+
+                  <p>
+                    <strong>Transaction Status:</strong>{' '}
+                    {selectedAlert.transactionStatus}
+                  </p>
+
+                  <p>
+                    <strong>Alert Status:</strong>{' '}
+                    {selectedAlert.alertStatus}
+                  </p>
+
+                  <p>
+                    <strong>Reason:</strong>{' '}
+                    {selectedAlert.assessmentReason}
+                  </p>
+
+                  <p>
+                    <strong>Assigned Analyst:</strong>{' '}
+                    {selectedAlert.assignedAnalystEmail ?? 'Unassigned'}
+                  </p>
+
+                  <p>
+                    <strong>Created At:</strong>{' '}
+                    {new Date(selectedAlert.createdAt).toLocaleString('en-IN')}
+                  </p>
+
+                  {selectedAlert.resolvedAt && (
+                    <p>
+                      <strong>Resolved At:</strong>{' '}
+                      {new Date(selectedAlert.resolvedAt).toLocaleString('en-IN')}
+                    </p>
+                  )}
+
+                </>
+              )}
+
+              {detailError && (
+                <div role="alert" className="api-error">
+                  {detailError}
+                </div>
+              )}
+
+              <hr
+                style={{
+                  margin: '20px 0',
+                  borderColor: '#334155',
+                }}
+              />
+
+              {/* Review history */}
+              <h4>Analyst Review History</h4>
+
+              {historyLoading ? (
+                <p>Loading review history...</p>
+              ) : reviewHistory.length === 0 ? (
+                <p>No review history available for this alert.</p>
+              ) : (
+                <div style={{ marginBottom: '20px' }}>
+
+                  {reviewHistory.map((review) => (
+                    <div
+                      key={review.reviewId}
+                      style={{
+                        padding: '12px',
+                        marginBottom: '10px',
+                        border: '1px solid #334155',
+                        borderRadius: '8px',
+                      }}
+                    >
+                      <p>
+                        <strong>Action:</strong>{' '}
+                        {review.action}
+                      </p>
+
+                      <p>
+                        <strong>Analyst:</strong>{' '}
+                        {review.analystEmail}
+                      </p>
+
+                      <p>
+                        <strong>Notes:</strong>{' '}
+                        {review.notes || 'No notes provided'}
+                      </p>
+
+                      <p>
+                        <strong>Date:</strong>{' '}
+                        {new Date(review.createdAt).toLocaleString('en-IN')}
+                      </p>
+                    </div>
+                  ))}
+
+                </div>
+              )}
+
+              <hr
+                style={{
+                  margin: '20px 0',
+                  borderColor: '#334155',
+                }}
+              />
+
+              {/* Analyst actions */}
+              <h4>Analyst Review</h4>
+
+              <textarea
+                value={reviewNotes}
+                onChange={(event) => setReviewNotes(event.target.value)}
+                placeholder="Enter your investigation notes..."
+                maxLength={2000}
+                rows={4}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  borderRadius: '8px',
+                  marginBottom: '12px',
+                  boxSizing: 'border-box',
+                }}
+              />
+
+              <div
+                style={{
+                  display: 'flex',
+                  gap: '10px',
+                  flexWrap: 'wrap',
+                }}
+              >
+
+                <button
+                  className="secondary-button"
+                  disabled={
+                    actionLoading ||
+                    detailLoading ||
+                    selectedAlert.alertStatus === 'RESOLVED'
+                  }
+                  onClick={() => handleAlertAction('assign')}
+                >
+                  {actionLoading ? 'Processing...' : 'Assign to Me'}
+                </button>
+
+                <button
+                  className="secondary-button"
+                  disabled={
+                    actionLoading ||
+                    detailLoading ||
+                    historyLoading ||
+                    selectedAlert.decision !== 'HOLD' ||
+                    selectedAlert.alertStatus !== 'UNDER_REVIEW'
+                  }
+                  onClick={() => handleAlertAction('approve')}
+                >
+                  Approve Transaction
+                </button>
+
+                <button
+                  className="secondary-button"
+                  disabled={
+                    actionLoading ||
+                    detailLoading ||
+                    historyLoading ||
+                    selectedAlert.decision !== 'HOLD' ||
+                    selectedAlert.alertStatus !== 'UNDER_REVIEW'
+                  }
+                  onClick={() => handleAlertAction('reject')}
+                >
+                  Reject Transaction
+                </button>
+
+              </div>
+
+            </div>
+          )}
+
+          {/* Welcome section */}
           <section className="welcome-section">
+
             <div>
               <h2>Fraud Intelligence Overview</h2>
+
               <p>
                 Monitor suspicious transactions and manage fraud operations
                 in real time.
@@ -417,23 +735,31 @@ if (
             </div>
 
             <button
-  className="secondary-button"
-  onClick={() => setRefreshKey((current) => current + 1)}
->
-  <RefreshCw size={16} />
-  Refresh
-</button>
+              className="secondary-button"
+              onClick={() => setRefreshKey((current) => current + 1)}
+            >
+              <RefreshCw size={16} />
+              Refresh
+            </button>
+
           </section>
 
+          {/* Statistics */}
           <section className="stats-grid">
+
             <div className="stat-card">
               <div className="stat-top">
                 <span>Total Fraud Alerts</span>
+
                 <div className="stat-icon purple">
                   <ShieldCheck size={20} />
                 </div>
               </div>
-              <h3>{loading ? '...' : summary?.totalAlerts ?? 0}</h3>
+
+              <h3>
+                {loading ? '...' : summary?.totalAlerts ?? 0}
+              </h3>
+
               <div className="stat-footer positive">
                 <TrendingUp size={15} />
                 <span>All recorded alerts</span>
@@ -443,11 +769,16 @@ if (
             <div className="stat-card">
               <div className="stat-top">
                 <span>Open Alerts</span>
+
                 <div className="stat-icon orange">
                   <AlertTriangle size={20} />
                 </div>
               </div>
-              <h3>{loading ? '...' : summary?.openAlerts ?? 0}</h3>
+
+              <h3>
+                {loading ? '...' : summary?.openAlerts ?? 0}
+              </h3>
+
               <div className="stat-footer warning">
                 <Clock size={15} />
                 <span>Require attention</span>
@@ -457,11 +788,16 @@ if (
             <div className="stat-card">
               <div className="stat-top">
                 <span>High Risk Alerts</span>
+
                 <div className="stat-icon red">
                   <Activity size={20} />
                 </div>
               </div>
-              <h3>{loading ? '...' : summary?.highRiskAlerts ?? 0}</h3>
+
+              <h3>
+                {loading ? '...' : summary?.highRiskAlerts ?? 0}
+              </h3>
+
               <div className="stat-footer danger">
                 <TrendingUp size={15} />
                 <span>Risk score ≥ 70</span>
@@ -471,45 +807,66 @@ if (
             <div className="stat-card">
               <div className="stat-top">
                 <span>Pending Amount</span>
+
                 <div className="stat-icon blue">
                   <CircleDollarSign size={20} />
                 </div>
               </div>
+
               <h3>
-  {loading
-    ? '...'
-    : `₹${(summary?.totalPendingAmount ?? 0).toLocaleString('en-IN', {
-        minimumFractionDigits: 2,
-      })}`}
-</h3>
+                {loading
+                  ? '...'
+                  : `₹${(
+                      summary?.totalPendingAmount ?? 0
+                    ).toLocaleString('en-IN', {
+                      minimumFractionDigits: 2,
+                    })}`}
+              </h3>
+
               <div className="stat-footer neutral">
                 <Clock size={15} />
                 <span>Awaiting review</span>
               </div>
             </div>
+
           </section>
 
+          {/* Analytics */}
           <section className="analytics-grid">
+
             <div className="panel chart-panel">
+
               <div className="panel-header">
+
                 <div>
                   <h3>Transaction Activity</h3>
                   <p>Weekly transaction monitoring overview</p>
                 </div>
+
                 <button className="select-button">
                   Last 7 days <ChevronDown size={15} />
                 </button>
+
               </div>
 
               <div className="chart-legend">
-                <span><i className="legend-blue"></i> Transactions</span>
-                <span><i className="legend-purple"></i> Flagged</span>
+                <span>
+                  <i className="legend-blue"></i> Transactions
+                </span>
+
+                <span>
+                  <i className="legend-purple"></i> Flagged
+                </span>
               </div>
 
               <div className="chart-container">
+
                 <ResponsiveContainer width="100%" height="100%">
+
                   <AreaChart data={chartData}>
+
                     <defs>
+
                       <linearGradient
                         id="transactionGradient"
                         x1="0"
@@ -522,6 +879,7 @@ if (
                           stopColor="#3b82f6"
                           stopOpacity={0.25}
                         />
+
                         <stop
                           offset="100%"
                           stopColor="#3b82f6"
@@ -541,12 +899,14 @@ if (
                           stopColor="#a78bfa"
                           stopOpacity={0.25}
                         />
+
                         <stop
                           offset="100%"
                           stopColor="#a78bfa"
                           stopOpacity={0}
                         />
                       </linearGradient>
+
                     </defs>
 
                     <CartesianGrid
@@ -592,18 +952,26 @@ if (
                       fill="url(#flaggedGradient)"
                       strokeWidth={2}
                     />
+
                   </AreaChart>
+
                 </ResponsiveContainer>
+
               </div>
             </div>
 
+            {/* Risk distribution */}
             <div className="panel risk-panel">
+
               <div className="panel-header">
+
                 <div>
                   <h3>Risk Distribution</h3>
                   <p>Fraud alert decisions</p>
                 </div>
+
                 <Activity size={19} className="muted-icon" />
+
               </div>
 
               <div className="risk-summary">
@@ -618,17 +986,26 @@ if (
               </div>
 
               <div className="risk-item">
-                <span><i className="risk-dot red-dot"></i> Blocked</span>
+                <span>
+                  <i className="risk-dot red-dot"></i> Blocked
+                </span>
+
                 <strong>1 <small>20%</small></strong>
               </div>
 
               <div className="risk-item">
-                <span><i className="risk-dot orange-dot"></i> Hold</span>
+                <span>
+                  <i className="risk-dot orange-dot"></i> Hold
+                </span>
+
                 <strong>4 <small>80%</small></strong>
               </div>
 
               <div className="risk-item">
-                <span><i className="risk-dot green-dot"></i> Allowed</span>
+                <span>
+                  <i className="risk-dot green-dot"></i> Allowed
+                </span>
+
                 <strong>0 <small>0%</small></strong>
               </div>
 
@@ -636,11 +1013,16 @@ if (
                 <Activity size={16} />
                 <span>Risk decisions from recorded alerts</span>
               </div>
+
             </div>
+
           </section>
 
+          {/* Fraud alerts table */}
           <section className="panel alerts-panel">
+
             <div className="panel-header alerts-header">
+
               <div>
                 <h3>Recent Fraud Alerts</h3>
                 <p>Review and monitor suspicious transactions</p>
@@ -650,11 +1032,14 @@ if (
                 <Download size={16} />
                 Export
               </button>
+
             </div>
 
             <div className="table-toolbar">
+
               <div className="table-search">
                 <Search size={16} />
+
                 <input
                   placeholder="Search transaction reference..."
                   value={search}
@@ -669,12 +1054,16 @@ if (
               >
                 <option value="ALL">All statuses</option>
                 <option value="OPEN">Open</option>
+                <option value="UNDER_REVIEW">Under Review</option>
                 <option value="RESOLVED">Resolved</option>
               </select>
+
             </div>
 
             <div className="table-wrapper">
+
               <table>
+
                 <thead>
                   <tr>
                     <th>TRANSACTION REFERENCE</th>
@@ -688,21 +1077,29 @@ if (
                 </thead>
 
                 <tbody>
+
                   {filteredAlerts.map((alert) => (
                     <tr key={alert.alertId}>
+
                       <td className="reference-cell">
                         {alert.transactionReference}
                       </td>
 
                       <td>{alert.transactionType}</td>
 
-                      <td className="amount-cell">{`₹${alert.amount.toLocaleString('en-IN', {
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-})}`}</td>
+                      <td className="amount-cell">
+                        {`${alert.currency} ${alert.amount.toLocaleString(
+                          'en-IN',
+                          {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          }
+                        )}`}
+                      </td>
 
                       <td>
                         <div className="risk-score">
+
                           <div className="risk-progress">
                             <div
                               style={{
@@ -716,28 +1113,36 @@ if (
                               }}
                             />
                           </div>
+
                           <strong>{alert.riskScore}</strong>
+
                         </div>
                       </td>
 
                       <td>
-                        <span className={`decision-badge ${alert.decision.toLowerCase()}`}>
+                        <span
+                          className={`decision-badge ${alert.decision.toLowerCase()}`}
+                        >
                           {alert.decision === 'BLOCK' ? (
                             <XCircle size={13} />
                           ) : (
                             <Clock size={13} />
                           )}
+
                           {alert.decision}
                         </span>
                       </td>
 
                       <td>
-                        <span className={`status-badge ${alert.alertStatus.toLowerCase()}`}>
+                        <span
+                          className={`status-badge ${alert.alertStatus.toLowerCase()}`}
+                        >
                           {alert.alertStatus === 'OPEN' ? (
                             <span className="status-dot"></span>
                           ) : (
                             <CheckCircle2 size={13} />
                           )}
+
                           {alert.alertStatus}
                         </span>
                       </td>
@@ -746,14 +1151,12 @@ if (
                         <button
                           className="view-button"
                           title="View alert"
-                          onClick={() => {
-  console.log('Selected alert:', alert)
-  setSelectedAlert(alert)
-}}
+                          onClick={() => handleViewAlert(alert)}
                         >
                           <Eye size={17} />
                         </button>
                       </td>
+
                     </tr>
                   ))}
 
@@ -764,13 +1167,18 @@ if (
                       </td>
                     </tr>
                   )}
+
                 </tbody>
+
               </table>
+
             </div>
 
             <div className="table-footer">
+
               <span>
-                Showing {filteredAlerts.length} of {alertPage?.totalElements ?? 0} alerts
+                Showing {filteredAlerts.length} of{' '}
+                {alertPage?.totalElements ?? 0} alerts
               </span>
 
               <div className="pagination">
@@ -778,17 +1186,25 @@ if (
                 <button className="page-active">1</button>
                 <button disabled>Next</button>
               </div>
+
             </div>
+
           </section>
 
+          {/* Footer */}
           <footer className="dashboard-footer">
-            <span>© 2026 FinSentinel. Intelligent Fraud Detection Platform.</span>
-            <span className="footer-status">
 
+            <span>
+              © 2026 FinSentinel. Intelligent Fraud Detection Platform.
+            </span>
+
+            <span className="footer-status">
               <span className="online-dot"></span>
               System operational
             </span>
+
           </footer>
+
         </div>
       </main>
     </div>

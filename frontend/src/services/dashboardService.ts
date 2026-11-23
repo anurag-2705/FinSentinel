@@ -41,6 +41,15 @@ export interface FraudAlert {
   resolvedAt: string | null;
 }
 
+export interface FraudAlertReview {
+  reviewId: string;
+  action: string;
+  analystId: string;
+  analystEmail: string;
+  notes: string | null;
+  createdAt: string;
+}
+
 export interface FraudAlertPage {
   alerts: FraudAlert[];
   page: number;
@@ -67,7 +76,6 @@ export const dashboardService = {
     const response = await api.get<FraudDashboardSummary>(
       "/api/v1/fraud/dashboard/summary"
     );
-
     return response.data;
   },
 
@@ -75,47 +83,57 @@ export const dashboardService = {
     const response = await api.get<AnalystWorkload[]>(
       "/api/v1/fraud/dashboard/analyst-workload"
     );
-
     return response.data;
   },
 
-  async getAlerts(
-    filters: AlertFilters = {}
-  ): Promise<FraudAlertPage> {
+  async getAlerts(filters: AlertFilters = {}): Promise<FraudAlertPage> {
     const response = await api.get<FraudAlertPage>(
       "/api/v1/fraud/dashboard/alerts",
-      {
-        params: filters,
-      }
+      { params: filters }
     );
-
     return response.data;
   },
 
-  async assignAlert(alertId: string, notes: string) {
-    const response = await api.post(
-      `/api/v1/fraud/alerts/${alertId}/assign`,
-      { notes }
+  async getAlert(alertId: string): Promise<FraudAlert> {
+    const response = await api.get<FraudAlert>(
+      `/api/v1/fraud/alerts/${alertId}`
     );
-
     return response.data;
   },
 
-  async approveAlert(alertId: string, notes: string) {
-    const response = await api.post(
+  async getReviewHistory(alertId: string): Promise<FraudAlertReview[]> {
+    const response = await api.get<FraudAlertReview[]>(
+      `/api/v1/fraud/alerts/${alertId}/reviews`
+    );
+    return response.data;
+  },
+
+  async assignAlert(alertId: string): Promise<FraudAlert> {
+    const response = await api.post<FraudAlert>(
+      `/api/v1/fraud/alerts/${alertId}/assign`
+    );
+    return response.data;
+  },
+
+  async approveAlert(
+    alertId: string,
+    notes: string
+  ): Promise<FraudAlert> {
+    const response = await api.post<FraudAlert>(
       `/api/v1/fraud/alerts/${alertId}/approve`,
       { notes }
     );
-
     return response.data;
   },
 
-  async rejectAlert(alertId: string, notes: string) {
-    const response = await api.post(
+  async rejectAlert(
+    alertId: string,
+    notes: string
+  ): Promise<FraudAlert> {
+    const response = await api.post<FraudAlert>(
       `/api/v1/fraud/alerts/${alertId}/reject`,
       { notes }
     );
-
     return response.data;
   },
 };

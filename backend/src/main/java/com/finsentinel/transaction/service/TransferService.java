@@ -4,6 +4,11 @@ import com.finsentinel.account.dto.AccountBalanceResponse;
 import com.finsentinel.account.entity.Account;
 import com.finsentinel.account.entity.AccountStatus;
 import com.finsentinel.account.repository.AccountRepository;
+
+import com.finsentinel.fraud.dto.FraudAssessmentResponse;
+import com.finsentinel.fraud.entity.FraudDecision;
+import com.finsentinel.fraud.service.FraudDetectionService;
+
 import com.finsentinel.transaction.dto.TransactionResponse;
 import com.finsentinel.transaction.dto.TransferRequest;
 import com.finsentinel.transaction.entity.FinancialTransaction;
@@ -25,19 +30,22 @@ public class TransferService {
     private final AccountBalanceService accountBalanceService;
     private final LedgerPostingService ledgerPostingService;
     private final TransactionReferenceGenerator referenceGenerator;
+    private final FraudDetectionService fraudDetectionService;
 
     public TransferService(
             AccountRepository accountRepository,
             FinancialTransactionRepository transactionRepository,
             AccountBalanceService accountBalanceService,
             LedgerPostingService ledgerPostingService,
-            TransactionReferenceGenerator referenceGenerator) {
+            TransactionReferenceGenerator referenceGenerator,
+            FraudDetectionService fraudDetectionService) {
 
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
         this.accountBalanceService = accountBalanceService;
         this.ledgerPostingService = ledgerPostingService;
         this.referenceGenerator = referenceGenerator;
+        this.fraudDetectionService = fraudDetectionService;
     }
 
     @Transactional
@@ -148,7 +156,28 @@ public class TransferService {
         FinancialTransaction savedTransaction =
                 transactionRepository.saveAndFlush(transaction);
 
-        // Post balanced debit and credit ledger entries.
+        // Assess fraud risk BEFORE posting ledger entries.
+        FraudAssessmentResponse assessment =
+                fraudDetectionService.assessTransaction(
+                        savedTransaction.getId());
+
+        // HOLD: Keep transaction pending for analyst review.
+        if (assessment.decision() == FraudDecision.HOLD) {
+            return TransactionResponse.from(savedTransaction);
+        }
+
+        // BLOCK: Reject without posting ledger entries.
+        if (assessment.decision() == FraudDecision.BLOCK) {
+
+            savedTransaction.setStatus(TransactionStatus.FAILED);
+
+            FinancialTransaction failedTransaction =
+                    transactionRepository.save(savedTransaction);
+
+            return TransactionResponse.from(failedTransaction);
+        }
+
+        // ALLOW: Post balanced debit and credit ledger entries.
         ledgerPostingService.postTransfer(
                 savedTransaction,
                 sourceAccount,

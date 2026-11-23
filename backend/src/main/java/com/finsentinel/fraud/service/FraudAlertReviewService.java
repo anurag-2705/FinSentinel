@@ -1,8 +1,12 @@
 package com.finsentinel.fraud.service;
 
+import com.finsentinel.account.dto.AccountBalanceResponse;
 import com.finsentinel.account.entity.Account;
 import com.finsentinel.account.entity.AccountStatus;
 import com.finsentinel.account.repository.AccountRepository;
+
+import com.finsentinel.beneficiary.entity.BeneficiaryStatus;
+import com.finsentinel.beneficiary.repository.BeneficiaryRepository;
 
 import com.finsentinel.fraud.dto.FraudAlertResponse;
 import com.finsentinel.fraud.dto.FraudAlertReviewResponse;
@@ -19,6 +23,7 @@ import com.finsentinel.transaction.entity.TransactionStatus;
 import com.finsentinel.transaction.entity.TransactionType;
 import com.finsentinel.transaction.repository.FinancialTransactionRepository;
 import com.finsentinel.transaction.repository.LedgerEntryRepository;
+import com.finsentinel.transaction.service.AccountBalanceService;
 import com.finsentinel.transaction.service.LedgerPostingService;
 
 import com.finsentinel.user.entity.AppUser;
@@ -41,6 +46,8 @@ public class FraudAlertReviewService {
     private final LedgerEntryRepository ledgerEntryRepository;
     private final LedgerPostingService ledgerPostingService;
     private final UserRepository userRepository;
+    private final BeneficiaryRepository beneficiaryRepository;
+    private final AccountBalanceService accountBalanceService;
 
     public FraudAlertReviewService(
             FraudAlertRepository fraudAlertRepository,
@@ -49,7 +56,9 @@ public class FraudAlertReviewService {
             AccountRepository accountRepository,
             LedgerEntryRepository ledgerEntryRepository,
             LedgerPostingService ledgerPostingService,
-            UserRepository userRepository
+            UserRepository userRepository,
+            BeneficiaryRepository beneficiaryRepository,
+            AccountBalanceService accountBalanceService
     ) {
         this.fraudAlertRepository = fraudAlertRepository;
         this.reviewRepository = reviewRepository;
@@ -58,6 +67,8 @@ public class FraudAlertReviewService {
         this.ledgerEntryRepository = ledgerEntryRepository;
         this.ledgerPostingService = ledgerPostingService;
         this.userRepository = userRepository;
+        this.beneficiaryRepository = beneficiaryRepository;
+        this.accountBalanceService = accountBalanceService;
     }
 
     @Transactional(readOnly = true)
@@ -83,7 +94,6 @@ public class FraudAlertReviewService {
         return toResponse(alert);
     }
 
-    // Retrieve the complete review history of a fraud alert.
     @Transactional(readOnly = true)
     public List<FraudAlertReviewResponse> getReviewHistory(UUID alertId) {
 
@@ -121,6 +131,7 @@ public class FraudAlertReviewService {
 
         if (alert.getStatus() != FraudAlertStatus.OPEN
                 && alert.getStatus() != FraudAlertStatus.UNDER_REVIEW) {
+
             throw new IllegalStateException(
                     "This fraud alert is no longer available for assignment"
             );
@@ -184,43 +195,12 @@ public class FraudAlertReviewService {
                 transactionRepository.findByIdForUpdate(
                         alert.getAssessment().getTransaction().getId()
                 ).orElseThrow(() ->
-                        new IllegalArgumentException(
-                                "Transaction not found"
-                        )
+                        new IllegalArgumentException("Transaction not found")
                 );
-
-        if (transaction.getTransactionType() != TransactionType.DEPOSIT) {
-            throw new IllegalStateException(
-                    "Only deposit transactions can be approved through this workflow"
-            );
-        }
 
         if (transaction.getStatus() != TransactionStatus.PENDING) {
             throw new IllegalStateException(
                     "Only pending transactions can be approved"
-            );
-        }
-
-        if (transaction.getDestinationAccount() == null) {
-            throw new IllegalStateException(
-                    "Deposit destination account not found"
-            );
-        }
-
-        Account account = accountRepository
-                .findByIdAndUser_IdForUpdate(
-                        transaction.getDestinationAccount().getId(),
-                        transaction.getUser().getId()
-                )
-                .orElseThrow(() ->
-                        new IllegalArgumentException(
-                                "Customer account not found"
-                        )
-                );
-
-        if (account.getStatus() != AccountStatus.ACTIVE) {
-            throw new IllegalStateException(
-                    "Cannot approve deposit for an inactive account"
             );
         }
 
@@ -230,10 +210,201 @@ public class FraudAlertReviewService {
             );
         }
 
-        // Post balanced ledger entries.
-        ledgerPostingService.postDeposit(transaction, account);
+        UUID userId = transaction.getUser().getId();
 
-        // Complete the financial transaction.
+        switch (transaction.getTransactionType()) {
+
+            case DEPOSIT -> {
+
+                if (transaction.getDestinationAccount() == null) {
+                    throw new IllegalStateException(
+                            "Deposit destination account not found"
+                    );
+                }
+
+                Account account = accountRepository.findByIdAndUser_IdForUpdate(
+                        transaction.getDestinationAccount().getId(),
+                        userId
+                ).orElseThrow(() ->
+                        new IllegalArgumentException("Customer account not found")
+                );
+
+                if (account.getStatus() != AccountStatus.ACTIVE) {
+                    throw new IllegalStateException(
+                            "Cannot approve deposit for an inactive account"
+                    );
+                }
+
+                ledgerPostingService.postDeposit(transaction, account);
+            }
+
+            case WITHDRAWAL -> {
+
+                if (transaction.getSourceAccount() == null) {
+                    throw new IllegalStateException(
+                            "Withdrawal source account not found"
+                    );
+                }
+
+                Account account = accountRepository.findByIdAndUser_IdForUpdate(
+                        transaction.getSourceAccount().getId(),
+                        userId
+                ).orElseThrow(() ->
+                        new IllegalArgumentException("Customer account not found")
+                );
+
+                if (account.getStatus() != AccountStatus.ACTIVE) {
+                    throw new IllegalStateException(
+                            "Cannot approve withdrawal from an inactive account"
+                    );
+                }
+
+                validateSufficientBalance(
+                        userId,
+                        account,
+                        transaction
+                );
+
+                ledgerPostingService.postWithdrawal(transaction, account);
+            }
+
+            case TRANSFER -> {
+
+                if (transaction.getSourceAccount() == null
+                        || transaction.getDestinationAccount() == null) {
+
+                    throw new IllegalStateException(
+                            "Transfer accounts not found"
+                    );
+                }
+
+                UUID sourceId = transaction.getSourceAccount().getId();
+                UUID destinationId = transaction.getDestinationAccount().getId();
+
+                if (sourceId.equals(destinationId)) {
+                    throw new IllegalStateException(
+                            "Source and destination accounts must be different"
+                    );
+                }
+
+                // Lock accounts in consistent UUID order.
+                UUID firstId = sourceId.compareTo(destinationId) < 0
+                        ? sourceId : destinationId;
+
+                UUID secondId = sourceId.compareTo(destinationId) < 0
+                        ? destinationId : sourceId;
+
+                Account firstAccount =
+                        accountRepository.findByIdAndUser_IdForUpdate(
+                                firstId,
+                                userId
+                        ).orElseThrow(() ->
+                                new IllegalArgumentException("Account not found")
+                        );
+
+                Account secondAccount =
+                        accountRepository.findByIdAndUser_IdForUpdate(
+                                secondId,
+                                userId
+                        ).orElseThrow(() ->
+                                new IllegalArgumentException("Account not found")
+                        );
+
+                Account sourceAccount = sourceId.equals(firstId)
+                        ? firstAccount : secondAccount;
+
+                Account destinationAccount = destinationId.equals(firstId)
+                        ? firstAccount : secondAccount;
+
+                if (sourceAccount.getStatus() != AccountStatus.ACTIVE
+                        || destinationAccount.getStatus() != AccountStatus.ACTIVE) {
+
+                    throw new IllegalStateException(
+                            "Both transfer accounts must be active"
+                    );
+                }
+
+                if (!sourceAccount.getCurrency().equals(
+                        destinationAccount.getCurrency())) {
+
+                    throw new IllegalStateException(
+                            "Transfer account currencies must match"
+                    );
+                }
+
+                if (!sourceAccount.getCurrency().equals(
+                        transaction.getCurrency())) {
+
+                    throw new IllegalStateException(
+                            "Transaction currency does not match account currency"
+                    );
+                }
+
+                validateSufficientBalance(
+                        userId,
+                        sourceAccount,
+                        transaction
+                );
+
+                ledgerPostingService.postTransfer(
+                        transaction,
+                        sourceAccount,
+                        destinationAccount
+                );
+            }
+
+            case BENEFICIARY_TRANSFER -> {
+
+                if (transaction.getSourceAccount() == null
+                        || transaction.getBeneficiary() == null) {
+
+                    throw new IllegalStateException(
+                            "Beneficiary transfer details are missing"
+                    );
+                }
+
+                Account sourceAccount =
+                        accountRepository.findByIdAndUser_IdForUpdate(
+                                transaction.getSourceAccount().getId(),
+                                userId
+                        ).orElseThrow(() ->
+                                new IllegalArgumentException("Source account not found")
+                        );
+
+                if (sourceAccount.getStatus() != AccountStatus.ACTIVE) {
+                    throw new IllegalStateException(
+                            "Source account is inactive"
+                    );
+                }
+
+                if (!"INR".equals(sourceAccount.getCurrency())) {
+                    throw new IllegalStateException(
+                            "Only INR beneficiary transfers are supported"
+                    );
+                }
+
+                beneficiaryRepository.findByIdAndUser_IdAndStatus(
+                        transaction.getBeneficiary().getId(),
+                        userId,
+                        BeneficiaryStatus.ACTIVE
+                ).orElseThrow(() ->
+                        new IllegalStateException("Active beneficiary not found")
+                );
+
+                validateSufficientBalance(
+                        userId,
+                        sourceAccount,
+                        transaction
+                );
+
+                ledgerPostingService.postBeneficiaryTransfer(
+                        transaction,
+                        sourceAccount
+                );
+            }
+        }
+
+        // Complete the transaction after successful ledger posting.
         transaction.setStatus(TransactionStatus.COMPLETED);
         transaction.setCompletedAt(Instant.now());
 
@@ -288,9 +459,7 @@ public class FraudAlertReviewService {
                 transactionRepository.findByIdForUpdate(
                         alert.getAssessment().getTransaction().getId()
                 ).orElseThrow(() ->
-                        new IllegalArgumentException(
-                                "Transaction not found"
-                        )
+                        new IllegalArgumentException("Transaction not found")
                 );
 
         if (transaction.getStatus() != TransactionStatus.PENDING) {
@@ -305,7 +474,6 @@ public class FraudAlertReviewService {
             );
         }
 
-        // Reject without posting any ledger entries.
         transaction.setStatus(TransactionStatus.FAILED);
         transactionRepository.save(transaction);
 
@@ -325,7 +493,24 @@ public class FraudAlertReviewService {
         return toResponse(savedAlert);
     }
 
+    private void validateSufficientBalance(
+            UUID userId,
+            Account account,
+            FinancialTransaction transaction
+    ) {
+
+        AccountBalanceResponse balance =
+                accountBalanceService.getBalance(userId, account.getId());
+
+        if (balance.availableBalance().compareTo(transaction.getAmount()) < 0) {
+            throw new IllegalStateException(
+                    "Insufficient balance to approve this transaction"
+            );
+        }
+    }
+
     private AppUser getAnalyst(UUID analystId) {
+
         return userRepository.findById(analystId)
                 .orElseThrow(() ->
                         new IllegalArgumentException("Analyst not found")
