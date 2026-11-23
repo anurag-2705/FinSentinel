@@ -1,5 +1,6 @@
 package com.finsentinel.account.service;
 
+import com.finsentinel.account.dto.AccountStatusHistoryResponse;
 import com.finsentinel.account.dto.AccountResponse;
 import com.finsentinel.account.dto.CreateAccountRequest;
 import com.finsentinel.account.entity.Account;
@@ -189,4 +190,22 @@ public class AccountService {
 
         accountStatusHistoryRepository.save(history);
     }
+    @Transactional(readOnly = true)
+public List<AccountStatusHistoryResponse> getAccountStatusHistory(
+        UUID userId,
+        UUID accountId
+) {
+
+    // Verify that the account belongs to the authenticated user.
+    accountRepository.findByIdAndUser_Id(accountId, userId)
+            .orElseThrow(() ->
+                    new IllegalArgumentException("Account not found"));
+
+    // Retrieve history in newest-first order.
+    return accountStatusHistoryRepository
+            .findByAccountIdOrderByCreatedAtDesc(accountId)
+            .stream()
+            .map(AccountStatusHistoryResponse::from)
+            .toList();
+}
 }

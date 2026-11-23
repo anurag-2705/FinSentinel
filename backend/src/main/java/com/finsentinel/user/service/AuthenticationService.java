@@ -81,15 +81,16 @@ public class AuthenticationService {
         String refreshToken = refreshTokenService.createRefreshToken(user);
 
         return new LoginResponse(
-                accessToken,
-                refreshToken,
-                "Bearer",
-                900,
-                604800,
-                user.getId(),
-                user.getEmail(),
-                user.getFirstName(),
-                user.getLastName()
-        );
+        accessToken,
+        refreshToken,
+        "Bearer",
+        900,
+        604800,
+        user.getId(),
+        user.getEmail(),
+        user.getFirstName(),
+        user.getLastName(),
+        roles
+);
     }
 }

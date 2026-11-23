@@ -25,9 +25,19 @@ function Login({ onLogin }: LoginProps) {
       })
 
       localStorage.setItem(
-        'finsentinel_access_token',
-        response.data.accessToken
-      )
+  'finsentinel_access_token',
+  response.data.accessToken
+)
+
+localStorage.setItem(
+  'finsentinel_user_roles',
+  JSON.stringify(response.data.roles)
+)
+
+localStorage.setItem(
+  'finsentinel_user_name',
+  `${response.data.firstName} ${response.data.lastName}`
+)
 
       onLogin()
     } catch (err) {
@@ -61,7 +71,7 @@ function Login({ onLogin }: LoginProps) {
         <div style={{ textAlign: 'center', marginBottom: '25px' }}>
           <ShieldCheck size={45} />
           <h2>FinSentinel</h2>
-          <p>Fraud Analyst Login</p>
+          <p>Secure Banking & Fraud Monitoring</p>
         </div>
 
         <label>Email Address</label>

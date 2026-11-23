@@ -1,5 +1,6 @@
 package com.finsentinel.user.dto;
 
+import java.util.List;
 import java.util.UUID;
 
 public record LoginResponse(
@@ -11,6 +12,7 @@ public record LoginResponse(
         UUID userId,
         String email,
         String firstName,
-        String lastName
+        String lastName,
+        List<String> roles
 ) {
 }

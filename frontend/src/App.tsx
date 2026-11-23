@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import Login from './Login'
+import CustomerDashboard from './CustomerDashboard'
 import {
   ShieldCheck,
   LayoutDashboard,
@@ -43,7 +44,19 @@ import {
 import './App.css'
 
 
+function getStoredRoles(): string[] {
+  try {
+    const roles = JSON.parse(
+      localStorage.getItem('finsentinel_user_roles') || '[]'
+    )
 
+    return Array.isArray(roles)
+      ? roles.filter((role): role is string => typeof role === 'string')
+      : []
+  } catch {
+    return []
+  }
+}
 const chartData = [
   { day: 'Mon', transactions: 120, flagged: 8 },
   { day: 'Tue', transactions: 180, flagged: 12 },
@@ -59,6 +72,7 @@ function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(
   Boolean(localStorage.getItem('finsentinel_access_token'))
 )
+const [userRoles, setUserRoles] = useState<string[]>(getStoredRoles)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('ALL')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -73,39 +87,48 @@ const [actionMessage, setActionMessage] = useState('')
   const [loading, setLoading] = useState(true)
   const [apiError, setApiError] = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
-    useEffect(() => {
-    const loadDashboard = async () => {
-      try {
-        setLoading(true)
-        setApiError('')
+   useEffect(() => {
+  const isAnalyst =
+    userRoles.includes('FRAUD_ANALYST') ||
+    userRoles.includes('ADMIN')
 
-        const [summaryData, workloadData, alertsData] =
-          await Promise.all([
-            dashboardService.getSummary(),
-            dashboardService.getAnalystWorkload(),
-            dashboardService.getAlerts({
-              page: 0,
-              size: 10,
-              sortBy: 'createdAt',
-              direction: 'DESC',
-            }),
-          ])
+  if (!isAuthenticated || !isAnalyst) {
+    setLoading(false)
+    return
+  }
 
-        setSummary(summaryData)
-        setAnalystWorkload(workloadData)
-        setAlertPage(alertsData)
-        setDashboardAlerts(alertsData.alerts)
+  const loadDashboard = async () => {
+    try {
+      setLoading(true)
+      setApiError('')
 
-      } catch (error) {
-        console.error('Dashboard API error:', error)
-        setApiError('Unable to load dashboard data. Please check your login.')
-      } finally {
-        setLoading(false)
-      }
+      const [summaryData, workloadData, alertsData] =
+        await Promise.all([
+          dashboardService.getSummary(),
+          dashboardService.getAnalystWorkload(),
+          dashboardService.getAlerts({
+            page: 0,
+            size: 10,
+            sortBy: 'createdAt',
+            direction: 'DESC',
+          }),
+        ])
+
+      setSummary(summaryData)
+      setAnalystWorkload(workloadData)
+      setAlertPage(alertsData)
+      setDashboardAlerts(alertsData.alerts)
+
+    } catch (error) {
+      console.error('Dashboard API error:', error)
+      setApiError('Unable to load dashboard data. Please check your login.')
+    } finally {
+      setLoading(false)
     }
+  }
 
-    loadDashboard()
-  }, [refreshKey])
+  loadDashboard()
+}, [refreshKey, isAuthenticated, userRoles])
 
   const handleAlertAction = async (
   action: 'assign' | 'approve' | 'reject'
@@ -158,16 +181,45 @@ const [actionMessage, setActionMessage] = useState('')
     { label: 'Analysts', icon: Users },
     { label: 'Settings', icon: Settings },
   ]
+const handleLogout = () => {
+  localStorage.removeItem('finsentinel_access_token')
+  localStorage.removeItem('finsentinel_refresh_token')
+  localStorage.removeItem('finsentinel_user_roles')
+  localStorage.removeItem('finsentinel_user_name')
+
+  setUserRoles([])
+  setIsAuthenticated(false)
+}
+
 if (!isAuthenticated) {
   return (
     <Login
       onLogin={() => {
+        setUserRoles(getStoredRoles())
         setIsAuthenticated(true)
         setRefreshKey((current) => current + 1)
       }}
     />
   )
 }
+
+if (userRoles.includes('CUSTOMER')) {
+  return <CustomerDashboard onLogout={handleLogout} />
+}
+
+if (
+  !userRoles.includes('FRAUD_ANALYST') &&
+  !userRoles.includes('ADMIN')
+) {
+  return (
+    <div style={{ padding: '40px', textAlign: 'center' }}>
+      <h2>Access Denied</h2>
+      <p>Your account does not have permission to access this dashboard.</p>
+      <button onClick={handleLogout}>Logout</button>
+    </div>
+  )
+}
+
   return (
     <div className="app-container">
       <aside className={`sidebar ${mobileMenuOpen ? 'sidebar-open' : ''}`}>

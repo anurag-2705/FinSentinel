@@ -119,16 +119,17 @@ public class RefreshTokenService {
         );
 
         return new LoginResponse(
-                accessToken,
-                newRawToken,
-                "Bearer",
-                900,
-                604800,
-                user.getId(),
-                user.getEmail(),
-                user.getFirstName(),
-                user.getLastName()
-        );
+        accessToken,
+        newRawToken,
+        "Bearer",
+        900,
+        604800,
+        user.getId(),
+        user.getEmail(),
+        user.getFirstName(),
+        user.getLastName(),
+        roles
+);
     }
 
     @Transactional

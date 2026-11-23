@@ -1,5 +1,6 @@
 package com.finsentinel.account.controller;
 
+import com.finsentinel.account.dto.AccountStatusHistoryResponse;
 import com.finsentinel.account.dto.AccountBalanceResponse;
 import com.finsentinel.account.dto.AccountResponse;
 import com.finsentinel.account.dto.CreateAccountRequest;
@@ -97,4 +98,15 @@ public class AccountController {
 
         return ResponseEntity.ok(account);
     }
+    @GetMapping("/{accountId}/status-history")
+public ResponseEntity<List<AccountStatusHistoryResponse>> getAccountStatusHistory(
+        @AuthenticationPrincipal UUID userId,
+        @PathVariable UUID accountId
+) {
+
+    List<AccountStatusHistoryResponse> history =
+            accountService.getAccountStatusHistory(userId, accountId);
+
+    return ResponseEntity.ok(history);
+}
 }
