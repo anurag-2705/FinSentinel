@@ -4,7 +4,10 @@ import com.finsentinel.account.dto.AccountResponse;
 import com.finsentinel.account.dto.CreateAccountRequest;
 import com.finsentinel.account.entity.Account;
 import com.finsentinel.account.entity.AccountStatus;
+import com.finsentinel.account.entity.AccountStatusAction;
+import com.finsentinel.account.entity.AccountStatusHistory;
 import com.finsentinel.account.repository.AccountRepository;
+import com.finsentinel.account.repository.AccountStatusHistoryRepository;
 import com.finsentinel.user.entity.AppUser;
 import com.finsentinel.user.entity.UserStatus;
 import com.finsentinel.user.repository.UserRepository;
@@ -26,17 +29,20 @@ public class AccountService {
     private final UserRepository userRepository;
     private final AccountNumberGenerator accountNumberGenerator;
     private final LedgerAccountRepository ledgerAccountRepository;
+    private final AccountStatusHistoryRepository accountStatusHistoryRepository;
 
     public AccountService(
             AccountRepository accountRepository,
             UserRepository userRepository,
             AccountNumberGenerator accountNumberGenerator,
-            LedgerAccountRepository ledgerAccountRepository
+            LedgerAccountRepository ledgerAccountRepository,
+            AccountStatusHistoryRepository accountStatusHistoryRepository
     ) {
         this.accountRepository = accountRepository;
         this.userRepository = userRepository;
         this.accountNumberGenerator = accountNumberGenerator;
         this.ledgerAccountRepository = ledgerAccountRepository;
+        this.accountStatusHistoryRepository = accountStatusHistoryRepository;
     }
 
     @Transactional
@@ -123,6 +129,14 @@ public class AccountService {
 
         Account savedAccount = accountRepository.save(account);
 
+        recordStatusChange(
+                accountId,
+                userId,
+                AccountStatusAction.FREEZE,
+                AccountStatus.ACTIVE,
+                AccountStatus.FROZEN
+        );
+
         return AccountResponse.from(savedAccount);
     }
 
@@ -146,6 +160,33 @@ public class AccountService {
 
         Account savedAccount = accountRepository.save(account);
 
+        recordStatusChange(
+                accountId,
+                userId,
+                AccountStatusAction.UNFREEZE,
+                AccountStatus.FROZEN,
+                AccountStatus.ACTIVE
+        );
+
         return AccountResponse.from(savedAccount);
+    }
+
+    private void recordStatusChange(
+            UUID accountId,
+            UUID userId,
+            AccountStatusAction action,
+            AccountStatus previousStatus,
+            AccountStatus newStatus
+    ) {
+
+        AccountStatusHistory history = new AccountStatusHistory();
+
+        history.setAccountId(accountId);
+        history.setPerformedByUserId(userId);
+        history.setAction(action);
+        history.setPreviousStatus(previousStatus);
+        history.setNewStatus(newStatus);
+
+        accountStatusHistoryRepository.save(history);
     }
 }
