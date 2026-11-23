@@ -1,0 +1,48 @@
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+!.env.example.*
+
+# Java / Maven
+**/target/
+**/build/
+.mvn/wrapper/maven-wrapper.jar
+
+# Node.js
+**/node_modules/
+**/dist/
+**/dist-ssr/
+
+# Logs
+*.log
+logs/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Operating system
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+
+# Certificates and private keys
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Local databases and backups
+*.db
+*.sqlite
+*.sqlite3
+*.bak
+
+# Local diagnostic files
+backend/startup-error.txt
+
