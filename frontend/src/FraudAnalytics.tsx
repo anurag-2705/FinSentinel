@@ -22,7 +22,12 @@ import {
   Ban,
   IndianRupee,
   Activity,
+  FileDown,
+  FileSpreadsheet,
 } from 'lucide-react'
+
+import { jsPDF } from 'jspdf'
+import autoTable from 'jspdf-autotable'
 
 import {
   dashboardService,
@@ -112,6 +117,256 @@ function FraudAnalytics() {
       maximumFractionDigits: 2,
     }).format(amount)
 
+  const getPeriodLabel = () => {
+    switch (period) {
+      case '7D':
+        return 'Last 7 Days'
+      case '30D':
+        return 'Last 30 Days'
+      case '90D':
+        return 'Last 90 Days'
+      case 'ALL':
+        return 'All Time'
+    }
+  }
+
+  const getExportFileName = (extension: string) =>
+    `FinSentinel_Fraud_Analytics_${period}_${new Date()
+      .toISOString()
+      .slice(0, 10)}.${extension}`
+
+  // CSV Export
+  const handleExportCSV = () => {
+    if (!summary) return
+
+    const escapeCSV = (value: unknown) => {
+      let text = String(value ?? '')
+
+      // Protect spreadsheet users against formula injection.
+      if (/^[=+\-@\t\r]/.test(text)) {
+        text = `'${text}`
+      }
+
+      return `"${text.replace(/"/g, '""')}"`
+    }
+
+    const rows: unknown[][] = [
+      ['FINSENTINEL - FRAUD ANALYTICS REPORT'],
+      ['Date Range', getPeriodLabel()],
+      ['Generated At', new Date().toLocaleString('en-IN')],
+      [],
+      ['SUMMARY'],
+      ['Metric', 'Value'],
+      ['Assessed Transactions', summary.assessedTransactions],
+      ['Flagged Transactions', summary.flaggedTransactions],
+      ['Held Transactions', summary.heldTransactions],
+      ['Blocked Transactions', summary.blockedTransactions],
+      ['Blocked Amount (INR)', summary.blockedTransactionAmount],
+      ['Fraud Detection Rate (%)', summary.fraudDetectionRate],
+      [],
+      ['DAILY FRAUD TRENDS'],
+      ['Date', 'Assessed', 'Flagged', 'Blocked'],
+      ...trends.map((item) => [
+        item.day,
+        item.assessed,
+        item.flagged,
+        item.blocked,
+      ]),
+      [],
+      ['RISK DISTRIBUTION'],
+      ['Risk Level', 'Transaction Count'],
+      ...riskDistribution.map((item) => [
+        item.riskLevel,
+        item.transactionCount,
+      ]),
+      [],
+      ['TOP FRAUD RULES'],
+      ['Rule Code', 'Rule Name', 'Trigger Count'],
+      ...rules.map((item) => [
+        item.ruleCode,
+        item.ruleName,
+        item.triggerCount,
+      ]),
+      [],
+      ['ANALYST PERFORMANCE'],
+      [
+        'Analyst Email',
+        'Assigned',
+        'Approved',
+        'Rejected',
+        'Completed',
+        'Resolution Rate (%)',
+      ],
+      ...analystPerformance.map((item) => [
+        item.analystEmail,
+        item.totalAssigned,
+        item.approvedAlerts,
+        item.rejectedAlerts,
+        item.completedInvestigations,
+        item.resolutionRate,
+      ]),
+    ]
+
+    const csvContent =
+      '\uFEFF' +
+      rows
+        .map((row) =>
+          row.map((value) => escapeCSV(value)).join(','),
+        )
+        .join('\r\n')
+
+    const blob = new Blob([csvContent], {
+      type: 'text/csv;charset=utf-8;',
+    })
+
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+
+    link.href = url
+    link.download = getExportFileName('csv')
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+
+    URL.revokeObjectURL(url)
+  }
+
+  // PDF Export
+  const handleExportPDF = () => {
+    if (!summary) return
+
+    const doc = new jsPDF()
+
+    doc.setFontSize(19)
+    doc.text('FinSentinel', 14, 18)
+
+    doc.setFontSize(13)
+    doc.text('Fraud Analytics Report', 14, 27)
+
+    doc.setFontSize(10)
+    doc.text(`Date Range: ${getPeriodLabel()}`, 14, 36)
+    doc.text(
+      `Generated: ${new Date().toLocaleString('en-IN')}`,
+      14,
+      43,
+    )
+
+    let currentY = 52
+
+    const addTable = (
+      title: string,
+      head: string[][],
+      body: (string | number)[][],
+    ) => {
+      if (currentY > 255) {
+        doc.addPage()
+        currentY = 20
+      }
+
+      doc.setFontSize(12)
+      doc.text(title, 14, currentY)
+
+      autoTable(doc, {
+        startY: currentY + 5,
+        head,
+        body: body.length > 0 ? body : [['No data available']],
+        theme: 'grid',
+        styles: {
+          fontSize: 8,
+          cellPadding: 3,
+          overflow: 'linebreak',
+        },
+        headStyles: {
+          fillColor: [37, 99, 235],
+        },
+        margin: {
+          left: 14,
+          right: 14,
+        },
+      })
+
+      const tableResult = (
+        doc as jsPDF & {
+          lastAutoTable?: { finalY: number }
+        }
+      ).lastAutoTable
+
+      currentY = (tableResult?.finalY ?? currentY + 20) + 12
+    }
+
+    addTable(
+      'Summary',
+      [['Metric', 'Value']],
+      [
+        ['Assessed Transactions', summary.assessedTransactions],
+        ['Flagged Transactions', summary.flaggedTransactions],
+        ['Held Transactions', summary.heldTransactions],
+        ['Blocked Transactions', summary.blockedTransactions],
+        [
+          'Blocked Amount',
+          formatCurrency(summary.blockedTransactionAmount),
+        ],
+        [
+          'Fraud Detection Rate',
+          `${summary.fraudDetectionRate.toFixed(2)}%`,
+        ],
+      ],
+    )
+
+    addTable(
+      'Daily Fraud Trends',
+      [['Date', 'Assessed', 'Flagged', 'Blocked']],
+      trends.map((item) => [
+        item.day,
+        item.assessed,
+        item.flagged,
+        item.blocked,
+      ]),
+    )
+
+    addTable(
+      'Transaction Risk Distribution',
+      [['Risk Level', 'Transaction Count']],
+      riskDistribution.map((item) => [
+        item.riskLevel,
+        item.transactionCount,
+      ]),
+    )
+
+    addTable(
+      'Top Fraud Rules',
+      [['Rule Code', 'Rule Name', 'Trigger Count']],
+      rules.map((item) => [
+        item.ruleCode,
+        item.ruleName,
+        item.triggerCount,
+      ]),
+    )
+
+    addTable(
+      'Analyst Performance',
+      [
+        [
+          'Analyst',
+          'Assigned',
+          'Approved',
+          'Rejected',
+          'Completed',
+          'Resolution Rate',
+        ],
+      ],
+      analystPerformance.map((item) => [
+        item.analystEmail,
+        item.totalAssigned,
+        item.approvedAlerts,
+        item.rejectedAlerts,
+        item.completedInvestigations,
+        `${item.resolutionRate.toFixed(2)}%`,
+      ]),
+    )
+
+    doc.save(getExportFileName('pdf'))
+  }
   const cards = summary
     ? [
         {
@@ -179,6 +434,27 @@ function FraudAnalytics() {
             </select>
           </div>
 
+          <div className="analytics-export-actions">
+            <button
+              type="button"
+              className="analytics-export-btn csv-export-btn"
+              onClick={handleExportCSV}
+              disabled={loading || !summary}
+            >
+              <FileSpreadsheet size={17} />
+              Export CSV
+            </button>
+
+            <button
+              type="button"
+              className="analytics-export-btn pdf-export-btn"
+              onClick={handleExportPDF}
+              disabled={loading || !summary}
+            >
+              <FileDown size={17} />
+              Export PDF
+            </button>
+          </div>
           {summary && (
             <div className="detection-rate">
               <ShieldCheck size={22} />
@@ -400,6 +676,7 @@ function FraudAnalytics() {
 
     </section>
   )
+
 }
 
 export default FraudAnalytics

@@ -290,4 +290,55 @@
     align-items: flex-start;
   }
 }
+/* Analytics report export buttons */
+.analytics-export-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.analytics-export-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.csv-export-btn {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.csv-export-btn:hover:not(:disabled) {
+  background: #bbf7d0;
+}
+
+.pdf-export-btn {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.pdf-export-btn:hover:not(:disabled) {
+  background: #fecaca;
+}
+
+.analytics-export-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (max-width: 768px) {
+  .analytics-export-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+}
 }

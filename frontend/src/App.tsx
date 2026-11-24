@@ -588,7 +588,7 @@ if (
 
               <input placeholder="Search anything..." />
 
-              <span>âŒ˜ K</span>
+              <span>&#8984; K</span>
             </div>
 
             <button className="icon-button notification-button">
@@ -648,7 +648,7 @@ if (
 
               {analystWorkload.map((analyst) => (
                 <p key={analyst.analystId}>
-                  {analyst.analystEmail} â€”{' '}
+                  {analyst.analystEmail} &mdash;{' '}
                   {analyst.totalAssignedAlerts} assigned alerts,{' '}
                   {analyst.openAssignedAlerts} open
                 </p>
@@ -977,7 +977,7 @@ if (
 
               <div className="stat-footer danger">
                 <TrendingUp size={15} />
-                <span>Risk score â‰¥ 70</span>
+                <span>Risk score &ge; 70</span>
               </div>
             </div>
 
@@ -993,7 +993,7 @@ if (
               <h3>
                 {loading
                   ? '...'
-                  : `â‚¹${(
+                  : `\u20B9${(
                       summary?.totalPendingAmount ?? 0
                     ).toLocaleString('en-IN', {
                       minimumFractionDigits: 2,
@@ -1441,7 +1441,7 @@ if (
           <footer className="dashboard-footer">
 
             <span>
-              Â© 2026 FinSentinel. Intelligent Fraud Detection Platform.
+              &copy; 2026 FinSentinel. Intelligent Fraud Detection Platform.
             </span>
 
             <span className="footer-status">
