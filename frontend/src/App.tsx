@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import Login from './Login'
 import CustomerDashboard from './CustomerDashboard'
+import FraudAnalytics from './FraudAnalytics'
 
 import {
   ShieldCheck,
@@ -37,12 +38,12 @@ import {
 import {
   dashboardService,
   type FraudDashboardSummary,
+  type FraudDashboardActivity,
   type FraudAlert,
   type FraudAlertPage,
   type FraudAlertReview,
   type AnalystWorkload,
 } from './services/dashboardService'
-
 import './App.css'
 
 function getStoredRoles(): string[] {
@@ -59,15 +60,6 @@ function getStoredRoles(): string[] {
   }
 }
 
-const chartData = [
-  { day: 'Mon', transactions: 120, flagged: 8 },
-  { day: 'Tue', transactions: 180, flagged: 12 },
-  { day: 'Wed', transactions: 150, flagged: 10 },
-  { day: 'Thu', transactions: 240, flagged: 18 },
-  { day: 'Fri', transactions: 200, flagged: 14 },
-  { day: 'Sat', transactions: 300, flagged: 25 },
-  { day: 'Sun', transactions: 260, flagged: 20 },
-]
 
 function App() {
   const [activeNav, setActiveNav] = useState('Dashboard')
@@ -78,12 +70,19 @@ function App() {
 
   const [userRoles, setUserRoles] = useState<string[]>(getStoredRoles)
 
-  const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('ALL')
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+const [search, setSearch] = useState('')
+const [statusFilter, setStatusFilter] = useState('ALL')
+const [minimumRiskScore, setMinimumRiskScore] = useState('')
+const [maximumRiskScore, setMaximumRiskScore] = useState('')
+const [transactionType, setTransactionType] = useState('ALL')
+const [alertPageNumber, setAlertPageNumber] = useState(0)
+
+const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   const [summary, setSummary] =
     useState<FraudDashboardSummary | null>(null)
+const [chartData, setChartData] =
+  useState<FraudDashboardActivity[]>([])
 
   const [dashboardAlerts, setDashboardAlerts] = useState<FraudAlert[]>([])
 
@@ -129,24 +128,17 @@ function App() {
         setLoading(true)
         setApiError('')
 
-        const [summaryData, workloadData, alertsData] =
-          await Promise.all([
-            dashboardService.getSummary(),
-
-            dashboardService.getAnalystWorkload(),
-
-            dashboardService.getAlerts({
-              page: 0,
-              size: 10,
-              sortBy: 'createdAt',
-              direction: 'DESC',
-            }),
-          ])
+       const [summaryData, workloadData, activityData] =
+  await Promise.all([
+    dashboardService.getSummary(),
+    dashboardService.getAnalystWorkload(),
+    dashboardService.getActivity(),
+  ])
 
         setSummary(summaryData)
         setAnalystWorkload(workloadData)
-        setAlertPage(alertsData)
-        setDashboardAlerts(alertsData.alerts)
+setChartData(activityData)
+        
 
       } catch (error) {
         console.error('Dashboard API error:', error)
@@ -161,6 +153,48 @@ function App() {
 
     loadDashboard()
   }, [refreshKey, isAuthenticated, userRoles])
+  // Load fraud alerts with server-side filtering and pagination.
+  useEffect(() => {
+    const isAnalyst =
+      userRoles.includes('FRAUD_ANALYST') ||
+      userRoles.includes('ADMIN')
+
+    if (!isAuthenticated || !isAnalyst) return
+
+    const loadAlerts = async () => {
+      try {
+        const alertsData = await dashboardService.getAlerts({
+          status: statusFilter === 'ALL' ? undefined : statusFilter,
+          minimumRiskScore:
+            minimumRiskScore === '' ? undefined : Number(minimumRiskScore),
+          maximumRiskScore:
+            maximumRiskScore === '' ? undefined : Number(maximumRiskScore),
+          transactionType:
+            transactionType === 'ALL' ? undefined : transactionType,
+          page: alertPageNumber,
+          size: 10,
+          sortBy: 'createdAt',
+          direction: 'DESC',
+        })
+
+        setAlertPage(alertsData)
+        setDashboardAlerts(alertsData.alerts)
+      } catch (error) {
+        console.error('Unable to load fraud alerts:', error)
+      }
+    }
+
+    loadAlerts()
+  }, [
+    isAuthenticated,
+    userRoles,
+    refreshKey,
+    statusFilter,
+    minimumRiskScore,
+    maximumRiskScore,
+    transactionType,
+    alertPageNumber,
+  ])
 
   // Fetch complete alert details and review history.
   const handleViewAlert = async (alert: FraudAlert) => {
@@ -253,25 +287,149 @@ function App() {
     }
   }
 
-  // Filter alerts.
-  const filteredAlerts = dashboardAlerts.filter((alert) => {
-    const matchesSearch = alert.transactionReference
-      .toLowerCase()
-      .includes(search.toLowerCase())
+  // Search within the currently loaded server-side page.
+const filteredAlerts = dashboardAlerts.filter((alert) => {
+  return alert.transactionReference
+    .toLowerCase()
+    .includes(search.toLowerCase())
+})
+// Export all matching fraud alerts to CSV.
+const handleExportAlerts = async () => {
+  try {
+    if (
+      minimumRiskScore !== '' &&
+      maximumRiskScore !== '' &&
+      Number(minimumRiskScore) > Number(maximumRiskScore)
+    ) {
+      window.alert('Minimum risk score cannot exceed maximum risk score.')
+      return
+    }
 
-    const matchesStatus =
-      statusFilter === 'ALL' || alert.alertStatus === statusFilter
+    const filters = {
+      status: statusFilter === 'ALL' ? undefined : statusFilter,
+      minimumRiskScore:
+        minimumRiskScore === '' ? undefined : Number(minimumRiskScore),
+      maximumRiskScore:
+        maximumRiskScore === '' ? undefined : Number(maximumRiskScore),
+      transactionType:
+        transactionType === 'ALL' ? undefined : transactionType,
+      size: 100,
+      sortBy: 'createdAt',
+      direction: 'DESC',
+    }
 
-    return matchesSearch && matchesStatus
-  })
+    // Fetch the first page.
+    const firstPage = await dashboardService.getAlerts({
+      ...filters,
+      page: 0,
+    })
+
+    let allAlerts = [...firstPage.alerts]
+
+    // Fetch remaining pages.
+    for (let page = 1; page < firstPage.totalPages; page++) {
+      const nextPage = await dashboardService.getAlerts({
+        ...filters,
+        page,
+      })
+
+      allAlerts.push(...nextPage.alerts)
+    }
+
+    // Apply transaction reference search across all fetched alerts.
+    const exportAlerts = allAlerts.filter((alert) =>
+      alert.transactionReference
+        .toLowerCase()
+        .includes(search.toLowerCase())
+    )
+
+    if (exportAlerts.length === 0) {
+      window.alert('No fraud alerts found to export.')
+      return
+    }
+
+    const headers = [
+      'Transaction Reference',
+      'Transaction Type',
+      'Amount',
+      'Currency',
+      'Risk Score',
+      'Decision',
+      'Transaction Status',
+      'Alert Status',
+      'Assigned Analyst',
+      'Assessment Reason',
+      'Created At',
+      'Updated At',
+      'Resolved At',
+    ]
+
+    const escapeCSV = (value: unknown) => {
+      let text = String(value ?? '')
+
+      // Protect spreadsheet users from CSV formula injection.
+      if (/^[=+\-@\t\r]/.test(text)) {
+        text = "'" + text
+      }
+
+      return `"${text.replace(/"/g, '""')}"`
+    }
+
+    const rows = exportAlerts.map((alert) => [
+      alert.transactionReference,
+      alert.transactionType,
+      alert.amount,
+      alert.currency,
+      alert.riskScore,
+      alert.decision,
+      alert.transactionStatus,
+      alert.alertStatus,
+      alert.assignedAnalystEmail ?? 'Unassigned',
+      alert.assessmentReason,
+      alert.createdAt,
+      alert.updatedAt,
+      alert.resolvedAt ?? '',
+    ])
+
+    const csvContent = [
+      headers.map(escapeCSV).join(','),
+      ...rows.map((row) => row.map(escapeCSV).join(',')),
+    ].join('\r\n')
+
+    const blob = new Blob(
+      ['\uFEFF' + csvContent],
+      { type: 'text/csv;charset=utf-8;' }
+    )
+
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+
+    link.href = url
+    link.download = `FinSentinel_Fraud_Report_${new Date()
+      .toISOString()
+      .slice(0, 10)}.csv`
+
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+
+    URL.revokeObjectURL(url)
+
+    window.alert(`${exportAlerts.length} fraud alerts exported successfully.`)
+  } catch (error) {
+    console.error('Fraud report export failed:', error)
+    window.alert('Unable to export fraud alerts. Please try again.')
+  }
+}
 
   const navigation = [
-    { label: 'Dashboard', icon: LayoutDashboard },
-    { label: 'Fraud Alerts', icon: AlertTriangle },
-    { label: 'Transactions', icon: ArrowLeftRight },
-    { label: 'Analysts', icon: Users },
-    { label: 'Settings', icon: Settings },
-  ]
+  { label: 'Dashboard', icon: LayoutDashboard },
+  { label: 'Fraud Analytics', icon: TrendingUp },
+  { label: 'Fraud Alerts', icon: AlertTriangle },
+  { label: 'Transactions', icon: ArrowLeftRight },
+  { label: 'Analysts', icon: Users },
+  { label: 'Settings', icon: Settings },
+]
 
   // Logout.
   const handleLogout = () => {
@@ -430,7 +588,7 @@ if (
 
               <input placeholder="Search anything..." />
 
-              <span>⌘ K</span>
+              <span>âŒ˜ K</span>
             </div>
 
             <button className="icon-button notification-button">
@@ -442,12 +600,31 @@ if (
               <div className="avatar">FA</div>
               <ChevronDown size={16} />
             </div>
+<button
+  onClick={handleLogout}
+  style={{
+    padding: '9px 16px',
+    borderRadius: '8px',
+    border: '1px solid #374151',
+    background: '#1f2937',
+    color: '#ffffff',
+    cursor: 'pointer',
+    fontWeight: 600,
+  }}
+>
+  Logout
+</button>
 
           </div>
         </header>
 
         {/* Dashboard content */}
         <div className="dashboard-content">
+
+          {activeNav === 'Fraud Analytics' ? (
+            <FraudAnalytics />
+          ) : (
+            <>
 
           {apiError && (
             <div role="alert" className="api-error">
@@ -471,7 +648,7 @@ if (
 
               {analystWorkload.map((analyst) => (
                 <p key={analyst.analystId}>
-                  {analyst.analystEmail} —{' '}
+                  {analyst.analystEmail} â€”{' '}
                   {analyst.totalAssignedAlerts} assigned alerts,{' '}
                   {analyst.openAssignedAlerts} open
                 </p>
@@ -800,7 +977,7 @@ if (
 
               <div className="stat-footer danger">
                 <TrendingUp size={15} />
-                <span>Risk score ≥ 70</span>
+                <span>Risk score â‰¥ 70</span>
               </div>
             </div>
 
@@ -816,7 +993,7 @@ if (
               <h3>
                 {loading
                   ? '...'
-                  : `₹${(
+                  : `â‚¹${(
                       summary?.totalPendingAmount ?? 0
                     ).toLocaleString('en-IN', {
                       minimumFractionDigits: 2,
@@ -1028,10 +1205,13 @@ if (
                 <p>Review and monitor suspicious transactions</p>
               </div>
 
-              <button className="secondary-button">
-                <Download size={16} />
-                Export
-              </button>
+              <button
+  className="secondary-button"
+  onClick={handleExportAlerts}
+>
+  <Download size={16} />
+  Export
+</button>
 
             </div>
 
@@ -1048,15 +1228,59 @@ if (
               </div>
 
               <select
-                value={statusFilter}
-                onChange={(event) => setStatusFilter(event.target.value)}
-                className="filter-select"
-              >
-                <option value="ALL">All statuses</option>
-                <option value="OPEN">Open</option>
-                <option value="UNDER_REVIEW">Under Review</option>
-                <option value="RESOLVED">Resolved</option>
-              </select>
+  value={statusFilter}
+  onChange={(event) => {
+    setStatusFilter(event.target.value)
+    setAlertPageNumber(0)
+  }}
+  className="filter-select"
+>
+  <option value="ALL">All statuses</option>
+  <option value="OPEN">Open</option>
+  <option value="UNDER_REVIEW">Under Review</option>
+  <option value="RESOLVED">Resolved</option>
+</select>
+
+<input
+  type="number"
+  placeholder="Min risk"
+  min="0"
+  max="100"
+  value={minimumRiskScore}
+  className="filter-select"
+  onChange={(event) => {
+    setMinimumRiskScore(event.target.value)
+    setAlertPageNumber(0)
+  }}
+/>
+
+<input
+  type="number"
+  placeholder="Max risk"
+  min="0"
+  max="100"
+  value={maximumRiskScore}
+  className="filter-select"
+  onChange={(event) => {
+    setMaximumRiskScore(event.target.value)
+    setAlertPageNumber(0)
+  }}
+/>
+
+<select
+  value={transactionType}
+  onChange={(event) => {
+    setTransactionType(event.target.value)
+    setAlertPageNumber(0)
+  }}
+  className="filter-select"
+>
+  <option value="ALL">All transaction types</option>
+  <option value="DEPOSIT">Deposit</option>
+  <option value="WITHDRAWAL">Withdrawal</option>
+  <option value="TRANSFER">Transfer</option>
+  <option value="BENEFICIARY_TRANSFER">Beneficiary Transfer</option>
+</select>
 
             </div>
 
@@ -1181,21 +1405,43 @@ if (
                 {alertPage?.totalElements ?? 0} alerts
               </span>
 
-              <div className="pagination">
-                <button disabled>Previous</button>
-                <button className="page-active">1</button>
-                <button disabled>Next</button>
-              </div>
+<div className="pagination">
+  <button
+    disabled={!alertPage || alertPage.first}
+    onClick={() =>
+      setAlertPageNumber((current) => Math.max(0, current - 1))
+    }
+  >
+    Previous
+  </button>
+
+  <span className="page-active">
+    Page {alertPage ? alertPage.page + 1 : 1} of{' '}
+    {alertPage?.totalPages ?? 0}
+  </span>
+
+  <button
+    disabled={!alertPage || alertPage.last}
+    onClick={() =>
+      setAlertPageNumber((current) => current + 1)
+    }
+  >
+    Next
+  </button>
+</div>
 
             </div>
 
           </section>
 
+            </>
+          )}
+
           {/* Footer */}
           <footer className="dashboard-footer">
 
             <span>
-              © 2026 FinSentinel. Intelligent Fraud Detection Platform.
+              Â© 2026 FinSentinel. Intelligent Fraud Detection Platform.
             </span>
 
             <span className="footer-status">

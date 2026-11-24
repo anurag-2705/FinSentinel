@@ -89,4 +89,9 @@ public interface FinancialTransactionRepository
     Optional<FinancialTransaction> findByIdForUpdate(
             @Param("transactionId") UUID transactionId
     );
+// Dashboard: daily transaction activity
+long countByCreatedAtGreaterThanEqualAndCreatedAtLessThan(
+        Instant start,
+        Instant end
+);
 }

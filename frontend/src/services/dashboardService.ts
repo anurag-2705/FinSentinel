@@ -1,5 +1,11 @@
 import api from "./api";
 
+export interface FraudDashboardActivity {
+  day: string;
+  transactions: number;
+  flagged: number;
+}
+
 export interface FraudDashboardSummary {
   totalAlerts: number;
   openAlerts: number;
@@ -71,10 +77,108 @@ export interface AlertFilters {
   direction?: string;
 }
 
+export interface FraudAnalyticsSummary {
+  assessedTransactions: number;
+  flaggedTransactions: number;
+  heldTransactions: number;
+  blockedTransactions: number;
+  blockedTransactionAmount: number;
+  fraudDetectionRate: number;
+}
+
+export interface FraudDashboardTrend {
+  day: string;
+  assessed: number;
+  flagged: number;
+  blocked: number;
+}
+
+export interface FraudRuleFrequency {
+  ruleCode: string;
+  ruleName: string;
+  triggerCount: number;
+}
+
+export interface FraudRiskDistribution {
+  riskLevel: string;
+  transactionCount: number;
+}
+
+export interface FraudAnalystPerformance {
+  analystId: string;
+  analystEmail: string;
+  totalAssigned: number;
+  approvedAlerts: number;
+  rejectedAlerts: number;
+  completedInvestigations: number;
+  resolutionRate: number;
+}
+
 export const dashboardService = {
+  // Fraud Analytics APIs with date-range filtering
+
+  async getAnalyticsSummary(
+    period: string = "7D"
+  ): Promise<FraudAnalyticsSummary> {
+    const response = await api.get<FraudAnalyticsSummary>(
+      "/api/v1/fraud/dashboard/analytics/summary",
+      { params: { period } }
+    );
+    return response.data;
+  },
+
+  async getDailyFraudTrends(
+    period: string = "7D"
+  ): Promise<FraudDashboardTrend[]> {
+    const response = await api.get<FraudDashboardTrend[]>(
+      "/api/v1/fraud/dashboard/analytics/daily-trends",
+      { params: { period } }
+    );
+    return response.data;
+  },
+
+  async getTopFraudRules(
+    period: string = "7D"
+  ): Promise<FraudRuleFrequency[]> {
+    const response = await api.get<FraudRuleFrequency[]>(
+      "/api/v1/fraud/dashboard/analytics/top-rules",
+      { params: { period } }
+    );
+    return response.data;
+  },
+
+  async getRiskDistribution(
+    period: string = "7D"
+  ): Promise<FraudRiskDistribution[]> {
+    const response = await api.get<FraudRiskDistribution[]>(
+      "/api/v1/fraud/dashboard/analytics/risk-distribution",
+      { params: { period } }
+    );
+    return response.data;
+  },
+
+  async getAnalystPerformance(
+    period: string = "7D"
+  ): Promise<FraudAnalystPerformance[]> {
+    const response = await api.get<FraudAnalystPerformance[]>(
+      "/api/v1/fraud/dashboard/analytics/analyst-performance",
+      { params: { period } }
+    );
+    return response.data;
+  },
+
+  // Existing Dashboard APIs
+
   async getSummary(): Promise<FraudDashboardSummary> {
     const response = await api.get<FraudDashboardSummary>(
       "/api/v1/fraud/dashboard/summary"
+    );
+    return response.data;
+  },
+
+  async getActivity(): Promise<FraudDashboardActivity[]> {
+    const response = await api.get<FraudDashboardActivity[]>(
+      "/api/v1/fraud/dashboard/activity"
     );
     return response.data;
   },

@@ -80,4 +80,9 @@ public interface FraudAlertRepository extends
 long countByTransactionStatus(
         @Param("transactionStatus") TransactionStatus transactionStatus
 );
+// Dashboard: count flagged transactions within a time window
+long countByCreatedAtGreaterThanEqualAndCreatedAtLessThan(
+        java.time.Instant start,
+        java.time.Instant end
+);
 }
