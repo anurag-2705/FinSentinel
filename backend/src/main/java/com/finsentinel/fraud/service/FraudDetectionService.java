@@ -10,6 +10,10 @@ import com.finsentinel.fraud.repository.FraudAlertRepository;
 import com.finsentinel.fraud.repository.FraudAssessmentRepository;
 import com.finsentinel.fraud.repository.FraudAssessmentRuleRepository;
 import com.finsentinel.fraud.repository.FraudRuleRepository;
+import com.finsentinel.ml.dto.MLPredictionRequest;
+import com.finsentinel.ml.dto.MLPredictionResponse;
+import com.finsentinel.ml.service.MLPredictionService;
+import com.finsentinel.ml.service.MLFeatureExtractionService;
 
 import com.finsentinel.transaction.entity.FinancialTransaction;
 import com.finsentinel.transaction.entity.TransactionStatus;
@@ -49,19 +53,25 @@ public class FraudDetectionService {
     private final FraudAssessmentRepository assessmentRepository;
     private final FraudAssessmentRuleRepository assessmentRuleRepository;
     private final FraudAlertRepository fraudAlertRepository;
+private final MLPredictionService mlPredictionService;
+private final MLFeatureExtractionService mlFeatureExtractionService;
 
     public FraudDetectionService(
-            FinancialTransactionRepository transactionRepository,
-            FraudRuleRepository fraudRuleRepository,
-            FraudAssessmentRepository assessmentRepository,
-            FraudAssessmentRuleRepository assessmentRuleRepository,
-            FraudAlertRepository fraudAlertRepository
-    ) {
+        FinancialTransactionRepository transactionRepository,
+        FraudRuleRepository fraudRuleRepository,
+        FraudAssessmentRepository assessmentRepository,
+        FraudAssessmentRuleRepository assessmentRuleRepository,
+        FraudAlertRepository fraudAlertRepository,
+        MLPredictionService mlPredictionService,
+        MLFeatureExtractionService mlFeatureExtractionService
+) {
         this.transactionRepository = transactionRepository;
         this.fraudRuleRepository = fraudRuleRepository;
         this.assessmentRepository = assessmentRepository;
         this.assessmentRuleRepository = assessmentRuleRepository;
         this.fraudAlertRepository = fraudAlertRepository;
+this.mlPredictionService = mlPredictionService;
+this.mlFeatureExtractionService = mlFeatureExtractionService;
     }
 
     @Transactional
@@ -228,6 +238,25 @@ public class FraudDetectionService {
                         .reduce((first, second) -> first + ", " + second)
                         .orElse("");
 
+// ML-based fraud prediction (advisory only).
+MLPredictionResponse mlResponse = null;
+
+try {
+    MLPredictionRequest mlRequest =
+            mlFeatureExtractionService.extractFeatures(transaction);
+
+    mlResponse = mlPredictionService.predict(mlRequest);
+
+    if (mlResponse != null && !mlResponse.success()) {
+        mlResponse = null;
+    }
+
+} catch (Exception exception) {
+
+    System.err.println(
+            "ML prediction unavailable: " + exception.getMessage()
+    );
+}
         // Save fraud assessment.
         FraudAssessment assessment = new FraudAssessment();
 
@@ -235,6 +264,22 @@ public class FraudDetectionService {
         assessment.setRiskScore(riskScore);
         assessment.setDecision(decision);
         assessment.setAssessmentReason(reason);
+
+// Store ML prediction separately from rule-based risk score.
+if (mlResponse != null) {
+
+    assessment.setMlFraudProbability(
+            mlResponse.fraud_probability()
+    );
+
+    assessment.setMlRiskLevel(
+            mlResponse.risk_level()
+    );
+
+    assessment.setMlModelVersion(
+            mlResponse.model()
+    );
+}
 
         assessment = assessmentRepository.saveAndFlush(assessment);
 
@@ -283,13 +328,16 @@ public class FraudDetectionService {
                         .toList();
 
         return new FraudAssessmentResponse(
-                assessment.getId(),
-                assessment.getTransaction().getId(),
-                assessment.getRiskScore(),
-                assessment.getDecision(),
-                assessment.getAssessmentReason(),
-                triggeredRuleNames,
-                assessment.getAssessedAt()
-        );
+        assessment.getId(),
+        assessment.getTransaction().getId(),
+        assessment.getRiskScore(),
+        assessment.getDecision(),
+        assessment.getAssessmentReason(),
+        triggeredRuleNames,
+        assessment.getAssessedAt(),
+        assessment.getMlFraudProbability(),
+        assessment.getMlRiskLevel(),
+        assessment.getMlModelVersion()
+);
     }
 }

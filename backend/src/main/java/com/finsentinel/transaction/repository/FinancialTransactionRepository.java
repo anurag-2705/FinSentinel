@@ -79,7 +79,19 @@ public interface FinancialTransactionRepository
             @Param("userId") UUID userId,
             @Param("status") TransactionStatus status
     );
-
+// Calculate average transaction amount within a specified time window.
+@Query("""
+        SELECT AVG(t.amount)
+        FROM FinancialTransaction t
+        WHERE t.user.id = :userId
+        AND t.status = :status
+        AND t.createdAt >= :since
+        """)
+Optional<BigDecimal> findAverageTransactionAmountSince(
+        @Param("userId") UUID userId,
+        @Param("status") TransactionStatus status,
+        @Param("since") Instant since
+);
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
             SELECT t

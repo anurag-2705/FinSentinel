@@ -571,9 +571,12 @@ public class FraudAlertReviewService {
                 assignedAnalyst != null ? assignedAnalyst.getId() : null,
                 assignedAnalyst != null ? assignedAnalyst.getEmail() : null,
                 alert.getAnalystNotes(),
-                alert.getCreatedAt(),
+                                alert.getCreatedAt(),
                 alert.getUpdatedAt(),
-                alert.getResolvedAt()
+                alert.getResolvedAt(),
+                alert.getAssessment().getMlFraudProbability(),
+                alert.getAssessment().getMlRiskLevel(),
+                alert.getAssessment().getMlModelVersion()
         );
     }
 }

@@ -1,4 +1,3 @@
-
 package com.finsentinel.fraud.entity;
 
 import com.finsentinel.transaction.entity.FinancialTransaction;
@@ -33,6 +32,15 @@ public class FraudAssessment {
 
     @Column(name = "assessment_reason", length = 1000)
     private String assessmentReason;
+
+    @Column(name = "ml_fraud_probability")
+    private Double mlFraudProbability;
+
+    @Column(name = "ml_risk_level", length = 20)
+    private String mlRiskLevel;
+
+    @Column(name = "ml_model_version", length = 100)
+    private String mlModelVersion;
 
     @Column(name = "assessed_at", nullable = false)
     private Instant assessedAt;
@@ -89,5 +97,29 @@ public class FraudAssessment {
 
     public Instant getAssessedAt() {
         return assessedAt;
+    }
+
+    public Double getMlFraudProbability() {
+        return mlFraudProbability;
+    }
+
+    public void setMlFraudProbability(Double mlFraudProbability) {
+        this.mlFraudProbability = mlFraudProbability;
+    }
+
+    public String getMlRiskLevel() {
+        return mlRiskLevel;
+    }
+
+    public void setMlRiskLevel(String mlRiskLevel) {
+        this.mlRiskLevel = mlRiskLevel;
+    }
+
+    public String getMlModelVersion() {
+        return mlModelVersion;
+    }
+
+    public void setMlModelVersion(String mlModelVersion) {
+        this.mlModelVersion = mlModelVersion;
     }
 }

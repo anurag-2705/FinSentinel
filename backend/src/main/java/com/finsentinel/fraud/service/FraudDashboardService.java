@@ -671,9 +671,12 @@ public List<FraudAnalystPerformanceResponse> getAnalystPerformance(String period
                 assignedAnalyst != null ? assignedAnalyst.getId() : null,
                 assignedAnalyst != null ? assignedAnalyst.getEmail() : null,
                 alert.getAnalystNotes(),
-                alert.getCreatedAt(),
+                                alert.getCreatedAt(),
                 alert.getUpdatedAt(),
-                alert.getResolvedAt()
+                alert.getResolvedAt(),
+                assessment.getMlFraudProbability(),
+                assessment.getMlRiskLevel(),
+                assessment.getMlModelVersion()
         );
     }
 }

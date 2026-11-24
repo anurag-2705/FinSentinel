@@ -46,3 +46,24 @@ Thumbs.db
 # Local diagnostic files
 backend/startup-error.txt
 
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Python environments
+.venv/
+venv/
+env/
+
+# Temporary model files
+*.pkl
+
+
+# Python environments
+.venv/
+venv/
+env/
+
+# Temporary model files
+*.pkl

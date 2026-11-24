@@ -66,6 +66,8 @@ public class SecurityConfig {
 
                 .requestMatchers("/api/v1/fraud/**")
                     .hasAnyRole("FRAUD_ANALYST", "ADMIN")
+.requestMatchers("/api/v1/ml/**")
+    .hasAnyRole("FRAUD_ANALYST", "ADMIN")
 
                 .anyRequest().denyAll()
             )

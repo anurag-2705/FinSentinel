@@ -1,4 +1,3 @@
-
 package com.finsentinel.fraud.dto;
 
 import com.finsentinel.fraud.entity.FraudDecision;
@@ -14,5 +13,32 @@ public record FraudAssessmentResponse(
         FraudDecision decision,
         String assessmentReason,
         List<String> triggeredRules,
-        Instant assessedAt
-) {}
+        Instant assessedAt,
+        Double mlFraudProbability,
+        String mlRiskLevel,
+        String mlModelVersion
+) {
+    // Backward-compatible constructor for existing tests.
+    public FraudAssessmentResponse(
+            UUID assessmentId,
+            UUID transactionId,
+            Integer riskScore,
+            FraudDecision decision,
+            String assessmentReason,
+            List<String> triggeredRules,
+            Instant assessedAt
+    ) {
+        this(
+                assessmentId,
+                transactionId,
+                riskScore,
+                decision,
+                assessmentReason,
+                triggeredRules,
+                assessedAt,
+                null,
+                null,
+                null
+        );
+    }
+}

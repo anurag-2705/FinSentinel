@@ -743,6 +743,32 @@ if (
                     {selectedAlert.assessmentReason}
                   </p>
 
+                                      <div className="ml-analysis-panel">
+                    <h4>ML Fraud Analysis</h4>
+
+                    <p>
+                      <strong>Fraud Probability:</strong>{' '}
+                      {selectedAlert.mlFraudProbability != null
+                        ? `${(selectedAlert.mlFraudProbability * 100).toFixed(2)}%`
+                        : 'Not Available'}
+                    </p>
+
+                    <p>
+                      <strong>ML Risk Level:</strong>{' '}
+                      {selectedAlert.mlRiskLevel ?? 'Not Available'}
+                    </p>
+
+                    <p>
+                      <strong>ML Model:</strong>{' '}
+                      {selectedAlert.mlModelVersion ?? 'Not Available'}
+                    </p>
+
+                    <small>
+                      Experimental ML prediction. Final decisions are based
+                      on the existing fraud rules.
+                    </small>
+                  </div>
+
                   <p>
                     <strong>Assigned Analyst:</strong>{' '}
                     {selectedAlert.assignedAnalystEmail ?? 'Unassigned'}

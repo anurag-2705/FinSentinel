@@ -12,39 +12,74 @@ import java.util.UUID;
 public record FraudAlertResponse(
 
         UUID alertId,
-
         UUID assessmentId,
-
         UUID transactionId,
-
         String transactionReference,
-
         TransactionType transactionType,
-
         BigDecimal amount,
-
         String currency,
-
         TransactionStatus transactionStatus,
-
         Integer riskScore,
-
         FraudDecision decision,
-
         String assessmentReason,
-
         FraudAlertStatus alertStatus,
-
         UUID assignedAnalystId,
-
         String assignedAnalystEmail,
-
         String analystNotes,
-
         Instant createdAt,
-
         Instant updatedAt,
+        Instant resolvedAt,
 
-        Instant resolvedAt
+        // ML prediction details
+        Double mlFraudProbability,
+        String mlRiskLevel,
+        String mlModelVersion
 
-) {}
+) {
+
+    // Backward-compatible constructor
+    public FraudAlertResponse(
+            UUID alertId,
+            UUID assessmentId,
+            UUID transactionId,
+            String transactionReference,
+            TransactionType transactionType,
+            BigDecimal amount,
+            String currency,
+            TransactionStatus transactionStatus,
+            Integer riskScore,
+            FraudDecision decision,
+            String assessmentReason,
+            FraudAlertStatus alertStatus,
+            UUID assignedAnalystId,
+            String assignedAnalystEmail,
+            String analystNotes,
+            Instant createdAt,
+            Instant updatedAt,
+            Instant resolvedAt
+    ) {
+        this(
+                alertId,
+                assessmentId,
+                transactionId,
+                transactionReference,
+                transactionType,
+                amount,
+                currency,
+                transactionStatus,
+                riskScore,
+                decision,
+                assessmentReason,
+                alertStatus,
+                assignedAnalystId,
+                assignedAnalystEmail,
+                analystNotes,
+                createdAt,
+                updatedAt,
+                resolvedAt,
+                null,
+                null,
+                null
+        );
+    }
+}

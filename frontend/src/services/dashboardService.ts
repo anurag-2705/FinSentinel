@@ -42,9 +42,14 @@ export interface FraudAlert {
   assignedAnalystId: string | null;
   assignedAnalystEmail: string | null;
   analystNotes: string | null;
-  createdAt: string;
+    createdAt: string;
   updatedAt: string;
   resolvedAt: string | null;
+
+  // ML prediction details
+  mlFraudProbability: number | null;
+  mlRiskLevel: string | null;
+  mlModelVersion: string | null;
 }
 
 export interface FraudAlertReview {
