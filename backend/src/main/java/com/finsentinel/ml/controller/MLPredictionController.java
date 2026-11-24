@@ -2,6 +2,7 @@ package com.finsentinel.ml.controller;
 
 import com.finsentinel.ml.dto.MLPredictionRequest;
 import com.finsentinel.ml.dto.MLPredictionResponse;
+import com.finsentinel.ml.dto.MLExplanationResponse;
 import com.finsentinel.ml.service.MLPredictionService;
 
 import org.springframework.http.ResponseEntity;
@@ -25,6 +26,16 @@ public class MLPredictionController {
     ) {
         MLPredictionResponse response =
                 mlPredictionService.predict(request);
+
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/explain")
+    public ResponseEntity<MLExplanationResponse> explainFraud(
+            @RequestBody MLPredictionRequest request
+    ) {
+        MLExplanationResponse response =
+                mlPredictionService.explain(request);
 
         return ResponseEntity.ok(response);
     }

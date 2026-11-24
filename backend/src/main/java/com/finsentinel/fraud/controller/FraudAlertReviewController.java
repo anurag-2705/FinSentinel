@@ -6,6 +6,9 @@ import com.finsentinel.fraud.dto.FraudReviewRequest;
 import com.finsentinel.fraud.entity.FraudAlertStatus;
 import com.finsentinel.fraud.service.FraudAlertReviewService;
 
+import com.finsentinel.fraud.service.FraudAlertExplanationService;
+import com.finsentinel.ml.dto.MLExplanationResponse;
+
 import jakarta.validation.Valid;
 
 import org.springframework.http.ResponseEntity;
@@ -20,12 +23,15 @@ import java.util.UUID;
 public class FraudAlertReviewController {
 
     private final FraudAlertReviewService fraudAlertReviewService;
+private final FraudAlertExplanationService fraudAlertExplanationService;
 
     public FraudAlertReviewController(
-            FraudAlertReviewService fraudAlertReviewService
-    ) {
-        this.fraudAlertReviewService = fraudAlertReviewService;
-    }
+        FraudAlertReviewService fraudAlertReviewService,
+        FraudAlertExplanationService fraudAlertExplanationService
+) {
+    this.fraudAlertReviewService = fraudAlertReviewService;
+    this.fraudAlertExplanationService = fraudAlertExplanationService;
+}
 
     @GetMapping
     public ResponseEntity<List<FraudAlertResponse>> getAlerts(
@@ -44,6 +50,15 @@ public class FraudAlertReviewController {
                 fraudAlertReviewService.getAlert(alertId)
         );
     }
+
+    @GetMapping("/{alertId}/explanation")
+public ResponseEntity<MLExplanationResponse> getAlertExplanation(
+        @PathVariable UUID alertId
+) {
+    return ResponseEntity.ok(
+            fraudAlertExplanationService.getExplanation(alertId)
+    );
+}
 
     // Get complete review history of a fraud alert.
     @GetMapping("/{alertId}/reviews")

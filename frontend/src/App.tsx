@@ -42,6 +42,7 @@ import {
   type FraudAlert,
   type FraudAlertPage,
   type FraudAlertReview,
+  type MLExplanationResponse,
   type AnalystWorkload,
 } from './services/dashboardService'
 import './App.css'
@@ -88,6 +89,15 @@ const [chartData, setChartData] =
 
   const [selectedAlert, setSelectedAlert] =
     useState<FraudAlert | null>(null)
+
+const [mlExplanation, setMlExplanation] =
+  useState<MLExplanationResponse | null>(null)
+
+const [explanationLoading, setExplanationLoading] =
+  useState(false)
+
+const [explanationError, setExplanationError] =
+  useState('')
 
   const [reviewHistory, setReviewHistory] =
     useState<FraudAlertReview[]>([])
@@ -199,10 +209,13 @@ setChartData(activityData)
   // Fetch complete alert details and review history.
   const handleViewAlert = async (alert: FraudAlert) => {
     setSelectedAlert(alert)
-    setReviewNotes('')
-    setReviewHistory([])
-    setActionMessage('')
-    setDetailError('')
+setReviewNotes('')
+setReviewHistory([])
+setActionMessage('')
+setDetailError('')
+setMlExplanation(null)
+setExplanationError('')
+setExplanationLoading(true)
 
     setDetailLoading(true)
     setHistoryLoading(true)
@@ -215,6 +228,20 @@ setChartData(activityData)
 
       setSelectedAlert(alertDetails)
       setReviewHistory(history)
+try {
+  const explanation =
+    await dashboardService.getAlertExplanation(alert.alertId)
+
+  setMlExplanation(explanation)
+} catch (error) {
+  console.error('Unable to load SHAP explanation:', error)
+  setExplanationError(
+    'Unable to load AI explanation for this transaction.'
+  )
+} finally {
+  setExplanationLoading(false)
+}
+
 
     } catch (error) {
       console.error('Unable to load alert details:', error)
@@ -223,9 +250,10 @@ setChartData(activityData)
         'Unable to load complete alert details or review history.'
       )
     } finally {
-      setDetailLoading(false)
-      setHistoryLoading(false)
-    }
+  setDetailLoading(false)
+  setHistoryLoading(false)
+  setExplanationLoading(false)
+}
   }
 
   // Assign, approve, or reject an alert.
@@ -743,31 +771,113 @@ if (
                     {selectedAlert.assessmentReason}
                   </p>
 
-                                      <div className="ml-analysis-panel">
-                    <h4>ML Fraud Analysis</h4>
+                                     <div className="ml-analysis-panel">
+  <h4>ML Fraud Analysis</h4>
 
-                    <p>
-                      <strong>Fraud Probability:</strong>{' '}
-                      {selectedAlert.mlFraudProbability != null
-                        ? `${(selectedAlert.mlFraudProbability * 100).toFixed(2)}%`
-                        : 'Not Available'}
-                    </p>
+  <p>
+    <strong>Fraud Probability:</strong>{' '}
+    {selectedAlert.mlFraudProbability != null
+      ? `${(selectedAlert.mlFraudProbability * 100).toFixed(2)}%`
+      : 'Not Available'}
+  </p>
 
-                    <p>
-                      <strong>ML Risk Level:</strong>{' '}
-                      {selectedAlert.mlRiskLevel ?? 'Not Available'}
-                    </p>
+  <p>
+    <strong>ML Risk Level:</strong>{' '}
+    {selectedAlert.mlRiskLevel ?? 'Not Available'}
+  </p>
 
-                    <p>
-                      <strong>ML Model:</strong>{' '}
-                      {selectedAlert.mlModelVersion ?? 'Not Available'}
-                    </p>
+  <p>
+    <strong>ML Model:</strong>{' '}
+    {selectedAlert.mlModelVersion ?? 'Not Available'}
+  </p>
 
-                    <small>
-                      Experimental ML prediction. Final decisions are based
-                      on the existing fraud rules.
-                    </small>
-                  </div>
+  <hr />
+
+  <h4>Explainable AI – SHAP Analysis</h4>
+
+  {explanationLoading && (
+    <p>Generating AI explanation...</p>
+  )}
+
+  {explanationError && (
+    <div role="alert" className="api-error">
+      {explanationError}
+    </div>
+  )}
+
+  {mlExplanation && (
+    <>
+      <p>
+        <strong>Explained Fraud Probability:</strong>{' '}
+        {mlExplanation.fraud_percentage.toFixed(2)}%
+      </p>
+
+      <p>
+        <strong>Explanation Model:</strong>{' '}
+        {mlExplanation.model}
+      </p>
+
+      <h5>Top Influencing Factors</h5>
+
+      {mlExplanation.top_factors.length > 0 ? (
+        mlExplanation.top_factors.map((factor) => (
+          <div key={factor.feature} style={{ marginBottom: '12px' }}>
+            <strong>{factor.label}</strong>
+            <br />
+            <small>
+              Value: {factor.value.toFixed(2)}
+              {' | '}
+              SHAP: {factor.shap_value.toFixed(5)}
+            </small>
+            <br />
+            <span>
+              {factor.impact === 'INCREASES_RISK'
+                ? '↑ Increases fraud risk'
+                : '↓ Decreases fraud risk'}
+            </span>
+          </div>
+        ))
+      ) : (
+        <p>No influencing factors available.</p>
+      )}
+
+      <h5>Risk-Increasing Factors</h5>
+
+      {mlExplanation.risk_increasing_factors.length > 0 ? (
+        mlExplanation.risk_increasing_factors.map((factor) => (
+          <p key={factor.feature}>
+            ↑ {factor.label} — SHAP: {factor.shap_value.toFixed(5)}
+          </p>
+        ))
+      ) : (
+        <p>No risk-increasing factors identified.</p>
+      )}
+
+      <h5>Risk-Decreasing Factors</h5>
+
+      {mlExplanation.risk_decreasing_factors.length > 0 ? (
+        mlExplanation.risk_decreasing_factors.map((factor) => (
+          <p key={factor.feature}>
+            ↓ {factor.label} — SHAP: {factor.shap_value.toFixed(5)}
+          </p>
+        ))
+      ) : (
+        <p>No risk-decreasing factors identified.</p>
+      )}
+
+      <small>{mlExplanation.disclaimer}</small>
+    </>
+  )}
+
+  <hr />
+
+  <small>
+    Experimental ML prediction. Final transaction decisions
+    are based on the existing fraud rules. Some input features
+    currently use neutral default values because device and
+    location data are not collected.
+  </small>
+</div>
 
                   <p>
                     <strong>Assigned Analyst:</strong>{' '}

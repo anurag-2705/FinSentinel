@@ -1,10 +1,15 @@
+
 package com.finsentinel.fraud.entity;
 
 import com.finsentinel.transaction.entity.FinancialTransaction;
 
 import jakarta.persistence.*;
 
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
 import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
 
 @Entity
@@ -41,6 +46,10 @@ public class FraudAssessment {
 
     @Column(name = "ml_model_version", length = 100)
     private String mlModelVersion;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "ml_feature_snapshot", columnDefinition = "jsonb")
+    private Map<String, Object> mlFeatureSnapshot;
 
     @Column(name = "assessed_at", nullable = false)
     private Instant assessedAt;
@@ -121,5 +130,13 @@ public class FraudAssessment {
 
     public void setMlModelVersion(String mlModelVersion) {
         this.mlModelVersion = mlModelVersion;
+    }
+
+    public Map<String, Object> getMlFeatureSnapshot() {
+        return mlFeatureSnapshot;
+    }
+
+    public void setMlFeatureSnapshot(Map<String, Object> mlFeatureSnapshot) {
+        this.mlFeatureSnapshot = mlFeatureSnapshot;
     }
 }

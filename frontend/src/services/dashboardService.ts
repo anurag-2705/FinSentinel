@@ -52,6 +52,27 @@ export interface FraudAlert {
   mlModelVersion: string | null;
 }
 
+export interface MLFeatureExplanation {
+  feature: string;
+  label: string;
+  value: number;
+  shap_value: number;
+  impact: string;
+}
+
+export interface MLExplanationResponse {
+  success: boolean;
+  model: string;
+  fraud_probability: number;
+  fraud_percentage: number;
+  risk_level: string;
+  threshold: number;
+  top_factors: MLFeatureExplanation[];
+  risk_increasing_factors: MLFeatureExplanation[];
+  risk_decreasing_factors: MLFeatureExplanation[];
+  disclaimer: string;
+}
+
 export interface FraudAlertReview {
   reviewId: string;
   action: string;
@@ -209,6 +230,15 @@ export const dashboardService = {
     );
     return response.data;
   },
+
+async getAlertExplanation(
+  alertId: string
+): Promise<MLExplanationResponse> {
+  const response = await api.get<MLExplanationResponse>(
+    `/api/v1/fraud/alerts/${alertId}/explanation`
+  );
+  return response.data;
+},
 
   async getReviewHistory(alertId: string): Promise<FraudAlertReview[]> {
     const response = await api.get<FraudAlertReview[]>(

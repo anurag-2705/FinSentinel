@@ -1,5 +1,8 @@
 package com.finsentinel.fraud.service;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 import com.finsentinel.fraud.dto.FraudAssessmentResponse;
 import com.finsentinel.fraud.entity.FraudAlert;
 import com.finsentinel.fraud.entity.FraudAssessment;
@@ -10,6 +13,7 @@ import com.finsentinel.fraud.repository.FraudAlertRepository;
 import com.finsentinel.fraud.repository.FraudAssessmentRepository;
 import com.finsentinel.fraud.repository.FraudAssessmentRuleRepository;
 import com.finsentinel.fraud.repository.FraudRuleRepository;
+
 import com.finsentinel.ml.dto.MLPredictionRequest;
 import com.finsentinel.ml.dto.MLPredictionResponse;
 import com.finsentinel.ml.service.MLPredictionService;
@@ -53,25 +57,73 @@ public class FraudDetectionService {
     private final FraudAssessmentRepository assessmentRepository;
     private final FraudAssessmentRuleRepository assessmentRuleRepository;
     private final FraudAlertRepository fraudAlertRepository;
-private final MLPredictionService mlPredictionService;
-private final MLFeatureExtractionService mlFeatureExtractionService;
+    private final MLPredictionService mlPredictionService;
+    private final MLFeatureExtractionService mlFeatureExtractionService;
 
     public FraudDetectionService(
-        FinancialTransactionRepository transactionRepository,
-        FraudRuleRepository fraudRuleRepository,
-        FraudAssessmentRepository assessmentRepository,
-        FraudAssessmentRuleRepository assessmentRuleRepository,
-        FraudAlertRepository fraudAlertRepository,
-        MLPredictionService mlPredictionService,
-        MLFeatureExtractionService mlFeatureExtractionService
-) {
+            FinancialTransactionRepository transactionRepository,
+            FraudRuleRepository fraudRuleRepository,
+            FraudAssessmentRepository assessmentRepository,
+            FraudAssessmentRuleRepository assessmentRuleRepository,
+            FraudAlertRepository fraudAlertRepository,
+            MLPredictionService mlPredictionService,
+            MLFeatureExtractionService mlFeatureExtractionService
+    ) {
         this.transactionRepository = transactionRepository;
         this.fraudRuleRepository = fraudRuleRepository;
         this.assessmentRepository = assessmentRepository;
         this.assessmentRuleRepository = assessmentRuleRepository;
         this.fraudAlertRepository = fraudAlertRepository;
-this.mlPredictionService = mlPredictionService;
-this.mlFeatureExtractionService = mlFeatureExtractionService;
+        this.mlPredictionService = mlPredictionService;
+        this.mlFeatureExtractionService = mlFeatureExtractionService;
+    }
+
+    /**
+     * Creates a snapshot of the exact features used by the ML model.
+     *
+     * The metadata identifies unavailable features separately.
+     * Metadata is NOT sent to the ML prediction model.
+     */
+    private Map<String, Object> createFeatureSnapshot(
+            MLPredictionRequest request
+    ) {
+
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+
+        // Original 12 ML features.
+
+        snapshot.put("amount", request.amount());
+        snapshot.put("transaction_hour", request.transaction_hour());
+        snapshot.put("is_weekend", request.is_weekend());
+        snapshot.put("transactions_last_1h", request.transactions_last_1h());
+        snapshot.put("failed_txns_24h", request.failed_txns_24h());
+        snapshot.put("new_device", request.new_device());
+        snapshot.put("new_payee", request.new_payee());
+        snapshot.put("geo_distance_km", request.geo_distance_km());
+        snapshot.put("account_age_days", request.account_age_days());
+        snapshot.put("is_international", request.is_international());
+        snapshot.put("average_amount_30d", request.average_amount_30d());
+        snapshot.put(
+                "amount_to_average_ratio",
+                request.amount_to_average_ratio()
+        );
+
+        // Metadata about unavailable features.
+
+        Map<String, Object> metadata = new LinkedHashMap<>();
+
+        metadata.put(
+                "unavailable_features",
+                List.of(
+                        "new_device",
+                        "geo_distance_km",
+                        "is_international"
+                )
+        );
+
+        snapshot.put("_metadata", metadata);
+
+        return snapshot;
     }
 
     @Transactional
@@ -84,6 +136,7 @@ this.mlFeatureExtractionService = mlFeatureExtractionService;
                 );
 
         // Prevent duplicate assessments.
+
         var existingAssessment =
                 assessmentRepository.findByTransaction_Id(transactionId);
 
@@ -101,6 +154,7 @@ this.mlFeatureExtractionService = mlFeatureExtractionService;
         int riskScore = 0;
 
         // Rule 1: Large transaction.
+
         FraudRule largeTransactionRule =
                 getEnabledRule("LARGE_TRANSACTION");
 
@@ -112,6 +166,7 @@ this.mlFeatureExtractionService = mlFeatureExtractionService;
         }
 
         // Rule 2: Very large transaction / high-risk pattern.
+
         FraudRule highRiskRule =
                 getEnabledRule("HIGH_RISK_PATTERN");
 
@@ -123,6 +178,7 @@ this.mlFeatureExtractionService = mlFeatureExtractionService;
         }
 
         // Rule 3: Multiple failed transactions within 24 hours.
+
         FraudRule failedTransactionsRule =
                 getEnabledRule("MULTIPLE_FAILED_TRANSACTIONS");
 
@@ -139,6 +195,7 @@ this.mlFeatureExtractionService = mlFeatureExtractionService;
                     );
 
             // Include the current transaction if it is already FAILED.
+
             if (transaction.getStatus() == TransactionStatus.FAILED) {
                 failedTransactionCount++;
             }
@@ -151,6 +208,7 @@ this.mlFeatureExtractionService = mlFeatureExtractionService;
         }
 
         // Rule 4: Rapid successive transactions within 5 minutes.
+
         FraudRule rapidTransactionsRule =
                 getEnabledRule("RAPID_TRANSACTIONS");
 
@@ -167,6 +225,7 @@ this.mlFeatureExtractionService = mlFeatureExtractionService;
 
             // Include the current transaction if it has not been
             // counted by the database query.
+
             if (recentTransactionCount == 0) {
                 recentTransactionCount = 1;
             }
@@ -179,6 +238,7 @@ this.mlFeatureExtractionService = mlFeatureExtractionService;
         }
 
         // Rule 5: Unusual transaction amount.
+
         FraudRule unusualAmountRule =
                 getEnabledRule("UNUSUAL_AMOUNT");
 
@@ -192,6 +252,7 @@ this.mlFeatureExtractionService = mlFeatureExtractionService;
 
             // Use historical behaviour only when sufficient
             // completed transaction history exists.
+
             if (completedTransactionCount >= MINIMUM_COMPLETED_TRANSACTIONS) {
 
                 Optional<BigDecimal> averageAmount =
@@ -218,6 +279,7 @@ this.mlFeatureExtractionService = mlFeatureExtractionService;
         }
 
         // Keep risk score within 0–100.
+
         riskScore = Math.min(riskScore, 100);
 
         FraudDecision decision;
@@ -238,52 +300,66 @@ this.mlFeatureExtractionService = mlFeatureExtractionService;
                         .reduce((first, second) -> first + ", " + second)
                         .orElse("");
 
-// ML-based fraud prediction (advisory only).
-MLPredictionResponse mlResponse = null;
+        // ML-based fraud prediction (advisory only).
 
-try {
-    MLPredictionRequest mlRequest =
-            mlFeatureExtractionService.extractFeatures(transaction);
+        MLPredictionResponse mlResponse = null;
 
-    mlResponse = mlPredictionService.predict(mlRequest);
+        Map<String, Object> mlFeatureSnapshot = null;
 
-    if (mlResponse != null && !mlResponse.success()) {
-        mlResponse = null;
-    }
+        try {
 
-} catch (Exception exception) {
+            MLPredictionRequest mlRequest =
+                    mlFeatureExtractionService.extractFeatures(transaction);
 
-    System.err.println(
-            "ML prediction unavailable: " + exception.getMessage()
-    );
-}
+            // Preserve the exact features used for this prediction.
+            // Metadata is stored separately from the ML request.
+
+            mlFeatureSnapshot = createFeatureSnapshot(mlRequest);
+
+            mlResponse = mlPredictionService.predict(mlRequest);
+
+            if (mlResponse != null && !mlResponse.success()) {
+                mlResponse = null;
+            }
+
+        } catch (Exception exception) {
+
+            System.err.println(
+                    "ML prediction unavailable: " + exception.getMessage()
+            );
+        }
+
         // Save fraud assessment.
+
         FraudAssessment assessment = new FraudAssessment();
 
         assessment.setTransaction(transaction);
         assessment.setRiskScore(riskScore);
         assessment.setDecision(decision);
         assessment.setAssessmentReason(reason);
+        assessment.setMlFeatureSnapshot(mlFeatureSnapshot);
 
-// Store ML prediction separately from rule-based risk score.
-if (mlResponse != null) {
+        // Store ML prediction separately from rule-based risk score.
 
-    assessment.setMlFraudProbability(
-            mlResponse.fraud_probability()
-    );
+        if (mlResponse != null) {
 
-    assessment.setMlRiskLevel(
-            mlResponse.risk_level()
-    );
+            assessment.setMlFraudProbability(
+                    mlResponse.fraud_probability()
+            );
 
-    assessment.setMlModelVersion(
-            mlResponse.model()
-    );
-}
+            assessment.setMlRiskLevel(
+                    mlResponse.risk_level()
+            );
+
+            assessment.setMlModelVersion(
+                    mlResponse.model()
+            );
+        }
 
         assessment = assessmentRepository.saveAndFlush(assessment);
 
         // Save every triggered rule.
+
         for (FraudRule rule : triggeredRules) {
 
             FraudAssessmentRule assessmentRule =
@@ -296,6 +372,7 @@ if (mlResponse != null) {
         }
 
         // Generate alert for suspicious transactions.
+
         if (decision == FraudDecision.HOLD
                 || decision == FraudDecision.BLOCK) {
 
@@ -328,16 +405,16 @@ if (mlResponse != null) {
                         .toList();
 
         return new FraudAssessmentResponse(
-        assessment.getId(),
-        assessment.getTransaction().getId(),
-        assessment.getRiskScore(),
-        assessment.getDecision(),
-        assessment.getAssessmentReason(),
-        triggeredRuleNames,
-        assessment.getAssessedAt(),
-        assessment.getMlFraudProbability(),
-        assessment.getMlRiskLevel(),
-        assessment.getMlModelVersion()
-);
+                assessment.getId(),
+                assessment.getTransaction().getId(),
+                assessment.getRiskScore(),
+                assessment.getDecision(),
+                assessment.getAssessmentReason(),
+                triggeredRuleNames,
+                assessment.getAssessedAt(),
+                assessment.getMlFraudProbability(),
+                assessment.getMlRiskLevel(),
+                assessment.getMlModelVersion()
+        );
     }
 }

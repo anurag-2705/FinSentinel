@@ -2,6 +2,7 @@ package com.finsentinel.ml.service;
 
 import com.finsentinel.ml.dto.MLPredictionRequest;
 import com.finsentinel.ml.dto.MLPredictionResponse;
+import com.finsentinel.ml.dto.MLExplanationResponse;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -28,48 +29,30 @@ public class MLPredictionService {
     ) {
         this.mlServiceUrl = mlServiceUrl;
         this.objectMapper = objectMapper;
+
         this.httpClient = HttpClient.newBuilder()
-        .version(HttpClient.Version.HTTP_1_1)
-        .build();
+                .version(HttpClient.Version.HTTP_1_1)
+                .build();
     }
 
     public MLPredictionResponse predict(MLPredictionRequest request) {
 
         try {
-            // Convert Java request into JSON
             String jsonBody = objectMapper.writeValueAsString(request);
 
-            System.out.println("ML Request JSON: " + jsonBody);
-
-            // Convert JSON into UTF-8 bytes
             byte[] requestBytes = jsonBody.getBytes(StandardCharsets.UTF_8);
 
-            System.out.println(
-                    "Outgoing JSON byte length: " + requestBytes.length
-            );
-
-            // Build HTTP request
             HttpRequest httpRequest = HttpRequest.newBuilder()
                     .uri(URI.create(mlServiceUrl + "/predict"))
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofByteArray(requestBytes))
                     .build();
 
-            // Send request to Python ML service
             HttpResponse<String> response = httpClient.send(
                     httpRequest,
                     HttpResponse.BodyHandlers.ofString()
             );
 
-            System.out.println(
-                    "ML Service HTTP Status: " + response.statusCode()
-            );
-
-            System.out.println(
-                    "ML Service Response: " + response.body()
-            );
-
-            // Handle unsuccessful response
             if (response.statusCode() < 200 ||
                     response.statusCode() >= 300) {
 
@@ -78,7 +61,6 @@ public class MLPredictionService {
                 );
             }
 
-            // Convert JSON response into Java DTO
             return objectMapper.readValue(
                     response.body(),
                     MLPredictionResponse.class
@@ -96,6 +78,53 @@ public class MLPredictionService {
 
             throw new RuntimeException(
                     "ML request was interrupted", e
+            );
+        }
+    }
+
+    public MLExplanationResponse explain(MLPredictionRequest request) {
+
+        try {
+            String jsonBody = objectMapper.writeValueAsString(request);
+
+            byte[] requestBytes = jsonBody.getBytes(StandardCharsets.UTF_8);
+
+            HttpRequest httpRequest = HttpRequest.newBuilder()
+                    .uri(URI.create(mlServiceUrl + "/explain"))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofByteArray(requestBytes))
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(
+                    httpRequest,
+                    HttpResponse.BodyHandlers.ofString()
+            );
+
+            if (response.statusCode() < 200 ||
+                    response.statusCode() >= 300) {
+
+                throw new RuntimeException(
+                        "SHAP Explanation Service Error: " + response.body()
+                );
+            }
+
+            return objectMapper.readValue(
+                    response.body(),
+                    MLExplanationResponse.class
+            );
+
+        } catch (IOException e) {
+
+            throw new RuntimeException(
+                    "Could not communicate with SHAP explanation service", e
+            );
+
+        } catch (InterruptedException e) {
+
+            Thread.currentThread().interrupt();
+
+            throw new RuntimeException(
+                    "SHAP explanation request was interrupted", e
             );
         }
     }
