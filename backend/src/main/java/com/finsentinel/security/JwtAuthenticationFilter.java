@@ -1,5 +1,10 @@
 package com.finsentinel.security;
 
+import com.finsentinel.user.entity.AppUser;
+import com.finsentinel.user.entity.UserStatus;
+import com.finsentinel.user.repository.UserRepository;
+import com.finsentinel.role.repository.UserRoleRepository;
+
 import io.jsonwebtoken.Claims;
 
 import jakarta.servlet.FilterChain;
@@ -21,9 +26,17 @@ import java.util.UUID;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
+    private final UserRepository userRepository;
+    private final UserRoleRepository userRoleRepository;
 
-    public JwtAuthenticationFilter(JwtService jwtService) {
+    public JwtAuthenticationFilter(
+            JwtService jwtService,
+            UserRepository userRepository,
+            UserRoleRepository userRoleRepository
+    ) {
         this.jwtService = jwtService;
+        this.userRepository = userRepository;
+        this.userRoleRepository = userRoleRepository;
     }
 
     @Override
@@ -48,23 +61,30 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                         claims.get("userId", String.class)
                 );
 
-                List<?> roles = claims.get("roles", List.class);
+                AppUser user = userRepository.findById(userId)
+                        .orElse(null);
 
-                List<SimpleGrantedAuthority> authorities = roles.stream()
-                        .map(role -> new SimpleGrantedAuthority(
-                                "ROLE_" + role.toString()
-                        ))
-                        .toList();
+                if (user != null
+                        && user.getStatus() == UserStatus.ACTIVE) {
 
-                UsernamePasswordAuthenticationToken authentication =
-                        new UsernamePasswordAuthenticationToken(
-                                userId,
-                                null,
-                                authorities
-                        );
+                    List<SimpleGrantedAuthority> authorities =
+                            userRoleRepository.findRoleNamesByUserId(userId)
+                                    .stream()
+                                    .map(roleName -> new SimpleGrantedAuthority(
+                                            "ROLE_" + roleName
+                                    ))
+                                    .toList();
 
-                SecurityContextHolder.getContext()
-                        .setAuthentication(authentication);
+                    UsernamePasswordAuthenticationToken authentication =
+                            new UsernamePasswordAuthenticationToken(
+                                    userId,
+                                    null,
+                                    authorities
+                            );
+
+                    SecurityContextHolder.getContext()
+                            .setAuthentication(authentication);
+                }
             }
         }
 

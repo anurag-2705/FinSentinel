@@ -1,4 +1,3 @@
-
 package com.finsentinel.fraud.service;
 
 import com.finsentinel.fraud.entity.FraudRule;
@@ -51,6 +50,12 @@ public class FraudRuleSeeder implements CommandLineRunner {
                 "High-Risk Transaction Pattern",
                 "A combination of suspicious transaction indicators is detected.",
                 40
+            ),
+            createRule(
+                "HIGH_VELOCITY_SPENDING",
+                "High Velocity Spending",
+                "Total transaction spending within a rolling 60-minute window exceeds the configured threshold.",
+                35
             )
         );
 

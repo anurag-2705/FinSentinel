@@ -58,16 +58,29 @@ public class SecurityConfig {
                     "/actuator/health"
                 ).permitAll()
 
-                .requestMatchers("/api/v1/accounts/**").authenticated()
+                // Admin User Management
+                .requestMatchers("/api/v1/admin/**")
+                    .hasRole("ADMIN")
 
-                .requestMatchers("/api/v1/transactions/**").authenticated()
+                // Accounts
+                .requestMatchers("/api/v1/accounts/**")
+                    .authenticated()
 
-                .requestMatchers("/api/v1/beneficiaries/**").authenticated()
+                // Transactions
+                .requestMatchers("/api/v1/transactions/**")
+                    .authenticated()
 
+                // Beneficiaries
+                .requestMatchers("/api/v1/beneficiaries/**")
+                    .authenticated()
+
+                // Fraud Management
                 .requestMatchers("/api/v1/fraud/**")
                     .hasAnyRole("FRAUD_ANALYST", "ADMIN")
-.requestMatchers("/api/v1/ml/**")
-    .hasAnyRole("FRAUD_ANALYST", "ADMIN")
+
+                // ML Service
+                .requestMatchers("/api/v1/ml/**")
+                    .hasAnyRole("FRAUD_ANALYST", "ADMIN")
 
                 .anyRequest().denyAll()
             )
@@ -99,17 +112,17 @@ public class SecurityConfig {
         );
 
         configuration.setAllowedHeaders(
-    List.of(
-        "Authorization",
-        "Content-Type",
-        "Idempotency-Key"
-    )
-);
+            List.of(
+                "Authorization",
+                "Content-Type",
+                "Idempotency-Key"
+            )
+        );
 
         configuration.setAllowCredentials(false);
 
         UrlBasedCorsConfigurationSource source =
-            new UrlBasedCorsConfigurationSource();
+                new UrlBasedCorsConfigurationSource();
 
         source.registerCorsConfiguration("/**", configuration);
 

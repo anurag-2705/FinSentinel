@@ -17,7 +17,7 @@
 >
 > **Important:** FinSentinel is an educational portfolio project. Transactions are simulated. The ML model uses synthetic data and is not validated for real banking or production fraud decisions.
 
----
+---  cd
 
 ## Table of Contents
 

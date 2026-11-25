@@ -52,6 +52,11 @@ public class FraudDetectionService {
 
     private static final long RAPID_TRANSACTION_THRESHOLD = 3;
 
+    private static final BigDecimal HIGH_VELOCITY_AMOUNT_THRESHOLD =
+            new BigDecimal("25000.00");
+
+    private static final int HIGH_VELOCITY_WINDOW_MINUTES = 60;
+
     private final FinancialTransactionRepository transactionRepository;
     private final FraudRuleRepository fraudRuleRepository;
     private final FraudAssessmentRepository assessmentRepository;
@@ -81,7 +86,7 @@ public class FraudDetectionService {
     /**
      * Creates a snapshot of the exact features used by the ML model.
      *
-     * The metadata identifies unavailable features separately.
+     * Metadata identifies unavailable features separately.
      * Metadata is NOT sent to the ML prediction model.
      */
     private Map<String, Object> createFeatureSnapshot(
@@ -89,8 +94,6 @@ public class FraudDetectionService {
     ) {
 
         Map<String, Object> snapshot = new LinkedHashMap<>();
-
-        // Original 12 ML features.
 
         snapshot.put("amount", request.amount());
         snapshot.put("transaction_hour", request.transaction_hour());
@@ -107,8 +110,6 @@ public class FraudDetectionService {
                 "amount_to_average_ratio",
                 request.amount_to_average_ratio()
         );
-
-        // Metadata about unavailable features.
 
         Map<String, Object> metadata = new LinkedHashMap<>();
 
@@ -194,12 +195,6 @@ public class FraudDetectionService {
                             failedWindowStart
                     );
 
-            // Include the current transaction if it is already FAILED.
-
-            if (transaction.getStatus() == TransactionStatus.FAILED) {
-                failedTransactionCount++;
-            }
-
             if (failedTransactionCount >= FAILED_TRANSACTION_THRESHOLD) {
 
                 triggeredRules.add(failedTransactionsRule);
@@ -223,13 +218,6 @@ public class FraudDetectionService {
                             rapidWindowStart
                     );
 
-            // Include the current transaction if it has not been
-            // counted by the database query.
-
-            if (recentTransactionCount == 0) {
-                recentTransactionCount = 1;
-            }
-
             if (recentTransactionCount >= RAPID_TRANSACTION_THRESHOLD) {
 
                 triggeredRules.add(rapidTransactionsRule);
@@ -237,7 +225,36 @@ public class FraudDetectionService {
             }
         }
 
-        // Rule 5: Unusual transaction amount.
+        // Rule 5: High spending velocity within 60 minutes.
+
+        FraudRule highVelocityRule =
+                getEnabledRule("HIGH_VELOCITY_SPENDING");
+
+        if (highVelocityRule != null) {
+
+            Instant highVelocityWindowStart =
+                    assessmentTime.minus(
+                            HIGH_VELOCITY_WINDOW_MINUTES,
+                            ChronoUnit.MINUTES
+                    );
+
+            BigDecimal recentTransactionAmount =
+                    transactionRepository.sumTransactionAmountsSince(
+                            userId,
+                            highVelocityWindowStart
+                    );
+
+            if (recentTransactionAmount != null
+                    && recentTransactionAmount.compareTo(
+                            HIGH_VELOCITY_AMOUNT_THRESHOLD
+                    ) >= 0) {
+
+                triggeredRules.add(highVelocityRule);
+                riskScore += highVelocityRule.getRiskScore();
+            }
+        }
+
+        // Rule 6: Unusual transaction amount.
 
         FraudRule unusualAmountRule =
                 getEnabledRule("UNUSUAL_AMOUNT");
@@ -250,10 +267,8 @@ public class FraudDetectionService {
                             TransactionStatus.COMPLETED
                     );
 
-            // Use historical behaviour only when sufficient
-            // completed transaction history exists.
-
-            if (completedTransactionCount >= MINIMUM_COMPLETED_TRANSACTIONS) {
+            if (completedTransactionCount >=
+                    MINIMUM_COMPLETED_TRANSACTIONS) {
 
                 Optional<BigDecimal> averageAmount =
                         transactionRepository.findAverageTransactionAmount(
@@ -262,7 +277,9 @@ public class FraudDetectionService {
                         );
 
                 if (averageAmount.isPresent()
-                        && averageAmount.get().compareTo(BigDecimal.ZERO) > 0) {
+                        && averageAmount.get().compareTo(
+                                BigDecimal.ZERO
+                        ) > 0) {
 
                     BigDecimal unusualAmountLimit =
                             averageAmount.get().multiply(
@@ -278,7 +295,7 @@ public class FraudDetectionService {
             }
         }
 
-        // Keep risk score within 0–100.
+        // Keep risk score within 0-100.
 
         riskScore = Math.min(riskScore, 100);
 
@@ -310,9 +327,6 @@ public class FraudDetectionService {
 
             MLPredictionRequest mlRequest =
                     mlFeatureExtractionService.extractFeatures(transaction);
-
-            // Preserve the exact features used for this prediction.
-            // Metadata is stored separately from the ML request.
 
             mlFeatureSnapshot = createFeatureSnapshot(mlRequest);
 

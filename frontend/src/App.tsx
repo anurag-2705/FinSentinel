@@ -2,6 +2,10 @@ import { useEffect, useState } from 'react'
 import Login from './Login'
 import CustomerDashboard from './CustomerDashboard'
 import FraudAnalytics from './FraudAnalytics'
+import CustomerTransactions from './CustomerTransactions'
+import Analysts from './Analysts'
+import SettingsPage from './Settings'
+import AdminUsers from './AdminUsers'
 
 import {
   ShieldCheck,
@@ -456,6 +460,9 @@ const handleExportAlerts = async () => {
   { label: 'Fraud Alerts', icon: AlertTriangle },
   { label: 'Transactions', icon: ArrowLeftRight },
   { label: 'Analysts', icon: Users },
+  ...(userRoles.includes('ADMIN')
+    ? [{ label: 'Admin Users', icon: ShieldCheck }]
+    : []),
   { label: 'Settings', icon: Settings },
 ]
 
@@ -650,8 +657,16 @@ if (
         <div className="dashboard-content">
 
           {activeNav === 'Fraud Analytics' ? (
-            <FraudAnalytics />
-          ) : (
+  <FraudAnalytics />
+) : activeNav === 'Transactions' ? (
+  <CustomerTransactions />
+) : activeNav === 'Analysts' ? (
+  <Analysts />
+) : activeNav === 'Admin Users' ? (
+  <AdminUsers />
+) : activeNav === 'Settings' ? (
+  <SettingsPage />
+) : (
             <>
 
           {apiError && (

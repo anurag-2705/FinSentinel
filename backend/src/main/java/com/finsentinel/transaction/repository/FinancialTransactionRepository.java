@@ -62,7 +62,7 @@ public interface FinancialTransactionRepository
             Instant createdAt
     );
 
-    // Count completed transactions for customer behaviour analysis.
+    // Count transactions by status for customer behaviour analysis.
     long countByUser_IdAndStatus(
             UUID userId,
             TransactionStatus status
@@ -79,19 +79,22 @@ public interface FinancialTransactionRepository
             @Param("userId") UUID userId,
             @Param("status") TransactionStatus status
     );
-// Calculate average transaction amount within a specified time window.
-@Query("""
-        SELECT AVG(t.amount)
-        FROM FinancialTransaction t
-        WHERE t.user.id = :userId
-        AND t.status = :status
-        AND t.createdAt >= :since
-        """)
-Optional<BigDecimal> findAverageTransactionAmountSince(
-        @Param("userId") UUID userId,
-        @Param("status") TransactionStatus status,
-        @Param("since") Instant since
-);
+
+    // Calculate average transaction amount within a specified time window.
+    @Query("""
+            SELECT AVG(t.amount)
+            FROM FinancialTransaction t
+            WHERE t.user.id = :userId
+            AND t.status = :status
+            AND t.createdAt >= :since
+            """)
+    Optional<BigDecimal> findAverageTransactionAmountSince(
+            @Param("userId") UUID userId,
+            @Param("status") TransactionStatus status,
+            @Param("since") Instant since
+    );
+
+    // Lock a transaction during concurrent processing.
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
             SELECT t
@@ -101,9 +104,29 @@ Optional<BigDecimal> findAverageTransactionAmountSince(
     Optional<FinancialTransaction> findByIdForUpdate(
             @Param("transactionId") UUID transactionId
     );
-// Dashboard: daily transaction activity
-long countByCreatedAtGreaterThanEqualAndCreatedAtLessThan(
-        Instant start,
-        Instant end
-);
+
+    // Calculate completed outgoing transaction amounts
+    // within a specified time window.
+    @Query("""
+            SELECT COALESCE(SUM(t.amount), 0)
+            FROM FinancialTransaction t
+            WHERE t.user.id = :userId
+            AND t.createdAt >= :since
+            AND t.status = com.finsentinel.transaction.entity.TransactionStatus.COMPLETED
+            AND t.transactionType IN (
+                com.finsentinel.transaction.entity.TransactionType.WITHDRAWAL,
+                com.finsentinel.transaction.entity.TransactionType.TRANSFER,
+                com.finsentinel.transaction.entity.TransactionType.BENEFICIARY_TRANSFER
+            )
+            """)
+    BigDecimal sumTransactionAmountsSince(
+            @Param("userId") UUID userId,
+            @Param("since") Instant since
+    );
+
+    // Dashboard: daily transaction activity.
+    long countByCreatedAtGreaterThanEqualAndCreatedAtLessThan(
+            Instant start,
+            Instant end
+    );
 }
