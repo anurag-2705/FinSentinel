@@ -258,6 +258,29 @@ async getAlertExplanation(
     return response.data;
   },
 
+  async autoAssignAlert(alertId: string): Promise<FraudAlert> {
+  const response = await api.post<FraudAlert>(
+    `/api/v1/fraud/alerts/${alertId}/auto-assign`
+  );
+  return response.data;
+},
+
+async bulkAutoAssignAlerts(): Promise<{
+  totalProcessed: number;
+  successfulAssignments: number;
+  failedAssignments: number;
+  messages: string[];
+}> {
+  const response = await api.post<{
+    totalProcessed: number;
+    successfulAssignments: number;
+    failedAssignments: number;
+    messages: string[];
+  }>('/api/v1/fraud/alerts/bulk-auto-assign');
+
+  return response.data;
+},
+
   async approveAlert(
     alertId: string,
     notes: string

@@ -29,6 +29,10 @@ public interface FraudAlertRepository extends
 
     List<FraudAlert> findAllByOrderByCreatedAtDesc();
 
+List<FraudAlert> findByStatusAndAssignedToIsNullOrderByCreatedAtAsc(
+        FraudAlertStatus status
+);
+
     List<FraudAlert> findByAssignedTo_IdOrderByCreatedAtDesc(
             UUID analystId
     );

@@ -8,6 +8,7 @@ import com.finsentinel.account.repository.AccountRepository;
 import com.finsentinel.beneficiary.entity.BeneficiaryStatus;
 import com.finsentinel.beneficiary.repository.BeneficiaryRepository;
 
+import com.finsentinel.fraud.dto.FraudBulkAssignmentResponse;
 import com.finsentinel.fraud.dto.FraudAlertResponse;
 import com.finsentinel.fraud.dto.FraudAlertReviewResponse;
 import com.finsentinel.fraud.entity.FraudAlert;
@@ -17,6 +18,8 @@ import com.finsentinel.fraud.entity.FraudDecision;
 import com.finsentinel.fraud.entity.FraudReviewAction;
 import com.finsentinel.fraud.repository.FraudAlertRepository;
 import com.finsentinel.fraud.repository.FraudAlertReviewRepository;
+import com.finsentinel.role.repository.UserRoleRepository;
+import com.finsentinel.role.entity.UserRole;
 
 import com.finsentinel.transaction.entity.FinancialTransaction;
 import com.finsentinel.transaction.entity.TransactionStatus;
@@ -48,28 +51,31 @@ public class FraudAlertReviewService {
     private final UserRepository userRepository;
     private final BeneficiaryRepository beneficiaryRepository;
     private final AccountBalanceService accountBalanceService;
+private final UserRoleRepository userRoleRepository;
 
     public FraudAlertReviewService(
-            FraudAlertRepository fraudAlertRepository,
-            FraudAlertReviewRepository reviewRepository,
-            FinancialTransactionRepository transactionRepository,
-            AccountRepository accountRepository,
-            LedgerEntryRepository ledgerEntryRepository,
-            LedgerPostingService ledgerPostingService,
-            UserRepository userRepository,
-            BeneficiaryRepository beneficiaryRepository,
-            AccountBalanceService accountBalanceService
-    ) {
-        this.fraudAlertRepository = fraudAlertRepository;
-        this.reviewRepository = reviewRepository;
-        this.transactionRepository = transactionRepository;
-        this.accountRepository = accountRepository;
-        this.ledgerEntryRepository = ledgerEntryRepository;
-        this.ledgerPostingService = ledgerPostingService;
-        this.userRepository = userRepository;
-        this.beneficiaryRepository = beneficiaryRepository;
-        this.accountBalanceService = accountBalanceService;
-    }
+        FraudAlertRepository fraudAlertRepository,
+        FraudAlertReviewRepository reviewRepository,
+        FinancialTransactionRepository transactionRepository,
+        AccountRepository accountRepository,
+        LedgerEntryRepository ledgerEntryRepository,
+        LedgerPostingService ledgerPostingService,
+        UserRepository userRepository,
+        BeneficiaryRepository beneficiaryRepository,
+        AccountBalanceService accountBalanceService,
+        UserRoleRepository userRoleRepository
+) {
+    this.fraudAlertRepository = fraudAlertRepository;
+    this.reviewRepository = reviewRepository;
+    this.transactionRepository = transactionRepository;
+    this.accountRepository = accountRepository;
+    this.ledgerEntryRepository = ledgerEntryRepository;
+    this.ledgerPostingService = ledgerPostingService;
+    this.userRepository = userRepository;
+    this.beneficiaryRepository = beneficiaryRepository;
+    this.accountBalanceService = accountBalanceService;
+    this.userRoleRepository = userRoleRepository;
+}
 
     @Transactional(readOnly = true)
     public List<FraudAlertResponse> getAlerts(FraudAlertStatus status) {
@@ -115,6 +121,251 @@ public class FraudAlertReviewService {
                 ))
                 .toList();
     }
+
+@Transactional
+public FraudAlertResponse autoAssignAlert(UUID alertId) {
+
+    // Serialize concurrent automatic assignment decisions.
+    userRoleRepository.acquireAutomaticAssignmentLock();
+
+    FraudAlert alert = fraudAlertRepository.findByIdForUpdate(alertId)
+            .orElseThrow(() ->
+                    new IllegalArgumentException("Fraud alert not found")
+            );
+
+    if (alert.getStatus() != FraudAlertStatus.OPEN) {
+        throw new IllegalStateException(
+                "Only OPEN alerts can be automatically assigned"
+        );
+    }
+
+    if (alert.getAssignedTo() != null) {
+        throw new IllegalStateException(
+                "Alert is already assigned"
+        );
+    }
+
+    List<UserRole> analystRoles =
+            userRoleRepository.findByRole_Name("FRAUD_ANALYST");
+
+    if (analystRoles.isEmpty()) {
+        throw new IllegalStateException(
+                "No fraud analysts are available"
+        );
+    }
+
+    AppUser selectedAnalyst = null;
+    long lowestWorkload = Long.MAX_VALUE;
+
+    for (UserRole userRole : analystRoles) {
+
+        AppUser analyst = userRole.getUser();
+
+        long openAlerts =
+                fraudAlertRepository.countByAssignedTo_IdAndStatus(
+                        analyst.getId(),
+                        FraudAlertStatus.OPEN
+                );
+
+        long underReviewAlerts =
+                fraudAlertRepository.countByAssignedTo_IdAndStatus(
+                        analyst.getId(),
+                        FraudAlertStatus.UNDER_REVIEW
+                );
+
+        long workloadScore = openAlerts + (underReviewAlerts * 2);
+
+        if (workloadScore < lowestWorkload) {
+            lowestWorkload = workloadScore;
+            selectedAnalyst = analyst;
+        }
+    }
+
+    if (selectedAnalyst == null) {
+        throw new IllegalStateException(
+                "Unable to select a fraud analyst"
+        );
+    }
+
+    alert.setAssignedTo(selectedAnalyst);
+    alert.setStatus(FraudAlertStatus.UNDER_REVIEW);
+
+    FraudAlert savedAlert = fraudAlertRepository.save(alert);
+
+    recordReview(
+            savedAlert,
+            selectedAnalyst,
+            FraudReviewAction.ASSIGNED,
+            "Automatically assigned based on analyst workload balancing. Workload score: "
+                    + lowestWorkload
+    );
+
+    return toResponse(savedAlert);
+}
+
+@Transactional
+public FraudBulkAssignmentResponse bulkAutoAssignAlerts() {
+
+    // Serialize bulk and individual automatic assignment decisions.
+    userRoleRepository.acquireAutomaticAssignmentLock();
+
+    List<FraudAlert> unassignedAlerts =
+            fraudAlertRepository
+                    .findByStatusAndAssignedToIsNullOrderByCreatedAtAsc(
+                            FraudAlertStatus.OPEN
+                    );
+
+    if (unassignedAlerts.isEmpty()) {
+        return new FraudBulkAssignmentResponse(
+                0,
+                0,
+                0,
+                List.of("No eligible unassigned OPEN alerts found.")
+        );
+    }
+
+    List<UserRole> analystRoles =
+            userRoleRepository.findByRole_Name("FRAUD_ANALYST");
+
+    if (analystRoles.isEmpty()) {
+        throw new IllegalStateException(
+                "No fraud analysts are available"
+        );
+    }
+
+    // Track workloads to balance assignments within this batch.
+    java.util.Map<UUID, Long> workloads = new java.util.HashMap<>();
+
+    java.util.Map<UUID, AppUser> analysts = new java.util.HashMap<>();
+
+    for (UserRole userRole : analystRoles) {
+
+        AppUser analyst = userRole.getUser();
+
+        long openAlerts =
+                fraudAlertRepository.countByAssignedTo_IdAndStatus(
+                        analyst.getId(),
+                        FraudAlertStatus.OPEN
+                );
+
+        long underReviewAlerts =
+                fraudAlertRepository.countByAssignedTo_IdAndStatus(
+                        analyst.getId(),
+                        FraudAlertStatus.UNDER_REVIEW
+                );
+
+        workloads.put(
+                analyst.getId(),
+                openAlerts + (underReviewAlerts * 2)
+        );
+
+        analysts.put(
+                analyst.getId(),
+                analyst
+        );
+    }
+
+    int successfulAssignments = 0;
+    int failedAssignments = 0;
+
+    List<String> messages = new java.util.ArrayList<>();
+
+    for (FraudAlert candidate : unassignedAlerts) {
+
+        try {
+
+            FraudAlert alert =
+                    fraudAlertRepository.findByIdForUpdate(candidate.getId())
+                            .orElse(null);
+
+            if (alert == null
+                    || alert.getStatus() != FraudAlertStatus.OPEN
+                    || alert.getAssignedTo() != null) {
+
+                failedAssignments++;
+
+                messages.add(
+                        "Skipped alert " + candidate.getId()
+                                + ": no longer eligible."
+                );
+
+                continue;
+            }
+
+            UUID selectedAnalystId = null;
+            long lowestWorkload = Long.MAX_VALUE;
+
+            for (var entry : workloads.entrySet()) {
+
+                if (entry.getValue() < lowestWorkload) {
+
+                    lowestWorkload = entry.getValue();
+                    selectedAnalystId = entry.getKey();
+                }
+            }
+
+            if (selectedAnalystId == null) {
+
+                failedAssignments++;
+
+                messages.add(
+                        "Failed alert " + alert.getId()
+                                + ": unable to select analyst."
+                );
+
+                continue;
+            }
+
+            AppUser selectedAnalyst =
+                    analysts.get(selectedAnalystId);
+
+            alert.setAssignedTo(selectedAnalyst);
+            alert.setStatus(FraudAlertStatus.UNDER_REVIEW);
+
+            FraudAlert savedAlert =
+                    fraudAlertRepository.save(alert);
+
+            recordReview(
+                    savedAlert,
+                    selectedAnalyst,
+                    FraudReviewAction.ASSIGNED,
+                    "Bulk automatically assigned based on analyst workload balancing. "
+                            + "Workload score: " + lowestWorkload
+            );
+
+            // Increment workload immediately so the next alert
+            // considers this assignment.
+            workloads.put(
+                    selectedAnalystId,
+                    lowestWorkload + 2
+            );
+
+            successfulAssignments++;
+
+            messages.add(
+                    "Assigned alert " + alert.getId()
+                            + " to " + selectedAnalyst.getEmail()
+                            + " (workload score: " + lowestWorkload + ")."
+            );
+
+        } catch (Exception exception) {
+
+            failedAssignments++;
+
+            messages.add(
+                    "Failed alert " + candidate.getId()
+                            + ": " + exception.getMessage()
+            );
+        }
+    }
+
+    return new FraudBulkAssignmentResponse(
+            unassignedAlerts.size(),
+            successfulAssignments,
+            failedAssignments,
+            messages
+    );
+}
 
     @Transactional
     public FraudAlertResponse assignAlert(

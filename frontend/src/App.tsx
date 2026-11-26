@@ -262,7 +262,7 @@ try {
 
   // Assign, approve, reject, or confirm a blocked alert.
 const handleAlertAction = async (
-  action: 'assign' | 'approve' | 'reject' | 'confirm-block'
+  action: 'assign' | 'auto-assign' | 'approve' | 'reject' | 'confirm-block'
 ) => {
   if (!selectedAlert) return
 
@@ -279,9 +279,12 @@ const handleAlertAction = async (
     setDetailError('')
 
     if (action === 'assign') {
-      await dashboardService.assignAlert(selectedAlert.alertId)
+  await dashboardService.assignAlert(selectedAlert.alertId)
 
-    } else if (action === 'approve') {
+} else if (action === 'auto-assign') {
+  await dashboardService.autoAssignAlert(selectedAlert.alertId)
+
+} else if (action === 'approve') {
       await dashboardService.approveAlert(
         selectedAlert.alertId,
         reviewNotes.trim()
@@ -301,11 +304,12 @@ const handleAlertAction = async (
     }
 
     const successMessages = {
-      assign: 'Alert assigned successfully.',
-      approve: 'Transaction approved successfully.',
-      reject: 'Transaction rejected successfully.',
-      'confirm-block': 'Blocked transaction confirmed. Alert resolved successfully.',
-    }
+  assign: 'Alert assigned successfully.',
+  'auto-assign': 'Alert automatically assigned to the analyst with the lowest workload.',
+  approve: 'Transaction approved successfully.',
+  reject: 'Transaction rejected successfully.',
+  'confirm-block': 'Blocked transaction confirmed. Alert resolved successfully.',
+}
 
     setActionMessage(successMessages[action])
 
@@ -332,6 +336,40 @@ const filteredAlerts = dashboardAlerts.filter((alert) => {
     .toLowerCase()
     .includes(search.toLowerCase())
 })
+
+// Automatically distribute all eligible unassigned alerts.
+const handleBulkAutoAssign = async () => {
+  const confirmed = window.confirm(
+    'Automatically assign all eligible OPEN, unassigned fraud alerts to analysts based on workload?'
+  )
+
+  if (!confirmed) return
+
+  try {
+    setActionLoading(true)
+    setActionMessage('')
+
+    const result = await dashboardService.bulkAutoAssignAlerts()
+
+    setActionMessage(
+      `Bulk assignment completed: ${result.successfulAssignments} assigned, ${result.failedAssignments} failed, out of ${result.totalProcessed} processed.`
+    )
+
+    setRefreshKey((previous) => previous + 1)
+
+    window.alert(
+      `Bulk assignment completed!\n\nProcessed: ${result.totalProcessed}\nSuccessfully assigned: ${result.successfulAssignments}\nFailed: ${result.failedAssignments}`
+    )
+  } catch (error) {
+    console.error('Bulk auto-assignment failed:', error)
+
+    setActionMessage('Bulk automatic assignment failed. Please try again.')
+    window.alert('Bulk assignment failed. Please try again.')
+  } finally {
+    setActionLoading(false)
+  }
+}
+
 // Export all matching fraud alerts to CSV.
 const handleExportAlerts = async () => {
   try {
@@ -1025,6 +1063,20 @@ if (
                 </button>
 
                 <button
+  className="secondary-button"
+  disabled={
+    actionLoading ||
+    detailLoading ||
+    historyLoading ||
+    selectedAlert.alertStatus !== 'OPEN' ||
+    selectedAlert.assignedAnalystId !== null
+  }
+  onClick={() => handleAlertAction('auto-assign')}
+>
+  {actionLoading ? 'Processing...' : 'Auto Assign (Workload Balanced)'}
+</button>
+
+                <button
                   className="secondary-button"
                   disabled={
                     actionLoading ||
@@ -1395,13 +1447,21 @@ if (
                 <p>Review and monitor suspicious transactions</p>
               </div>
 
+                            <button
+                className="secondary-button"
+                disabled={actionLoading}
+                onClick={handleBulkAutoAssign}
+              >
+                {actionLoading ? 'Processing...' : 'Bulk Auto Assign'}
+              </button>
+
               <button
-  className="secondary-button"
-  onClick={handleExportAlerts}
->
-  <Download size={16} />
-  Export
-</button>
+                className="secondary-button"
+                onClick={handleExportAlerts}
+              >
+                <Download size={16} />
+                Export
+              </button>
 
             </div>
 

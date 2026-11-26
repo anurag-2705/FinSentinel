@@ -1,5 +1,7 @@
 package com.finsentinel.fraud.controller;
 
+
+import com.finsentinel.fraud.dto.FraudBulkAssignmentResponse;
 import com.finsentinel.fraud.dto.FraudAlertResponse;
 import com.finsentinel.fraud.dto.FraudAlertReviewResponse;
 import com.finsentinel.fraud.dto.FraudReviewRequest;
@@ -135,4 +137,18 @@ public class FraudAlertReviewController {
                 )
         );
     }
+@PostMapping("/{alertId}/auto-assign")
+public ResponseEntity<FraudAlertResponse> autoAssignAlert(
+        @PathVariable UUID alertId
+) {
+    return ResponseEntity.ok(
+            fraudAlertReviewService.autoAssignAlert(alertId)
+    );
+}
+@PostMapping("/bulk-auto-assign")
+public ResponseEntity<FraudBulkAssignmentResponse> bulkAutoAssignAlerts() {
+    return ResponseEntity.ok(
+            fraudAlertReviewService.bulkAutoAssignAlerts()
+    );
+}
 }
