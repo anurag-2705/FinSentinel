@@ -14,7 +14,11 @@ public record FraudAnalystWorkloadResponse(
 
         long underReviewAlerts,
 
-        long resolvedAlerts
+        long resolvedAlerts,
+
+        long workloadScore,
+
+        boolean recommended
 
 ) {
 }

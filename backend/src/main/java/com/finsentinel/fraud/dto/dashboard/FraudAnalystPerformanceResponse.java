@@ -8,6 +8,7 @@ public record FraudAnalystPerformanceResponse(
         long totalAssigned,
         long approvedAlerts,
         long rejectedAlerts,
+        long confirmedBlockedAlerts,
         long completedInvestigations,
         double resolutionRate
 ) {

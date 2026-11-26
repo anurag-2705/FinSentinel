@@ -260,64 +260,71 @@ try {
 }
   }
 
-  // Assign, approve, or reject an alert.
-  const handleAlertAction = async (
-    action: 'assign' | 'approve' | 'reject'
-  ) => {
-    if (!selectedAlert) return
+  // Assign, approve, reject, or confirm a blocked alert.
+const handleAlertAction = async (
+  action: 'assign' | 'approve' | 'reject' | 'confirm-block'
+) => {
+  if (!selectedAlert) return
 
-    // Assignment does not require notes.
-    // Approval and rejection require investigation notes.
-    if (action !== 'assign' && !reviewNotes.trim()) {
-      setActionMessage('Please enter review notes first.')
-      return
-    }
-
-    try {
-      setActionLoading(true)
-      setActionMessage('')
-      setDetailError('')
-
-      if (action === 'assign') {
-        await dashboardService.assignAlert(selectedAlert.alertId)
-
-      } else if (action === 'approve') {
-        await dashboardService.approveAlert(
-          selectedAlert.alertId,
-          reviewNotes.trim()
-        )
-
-      } else {
-        await dashboardService.rejectAlert(
-          selectedAlert.alertId,
-          reviewNotes.trim()
-        )
-      }
-
-      const successMessages = {
-        assign: 'Alert assigned successfully.',
-        approve: 'Transaction approved successfully.',
-        reject: 'Transaction rejected successfully.',
-      }
-
-      setActionMessage(successMessages[action])
-
-      setReviewNotes('')
-      setSelectedAlert(null)
-      setReviewHistory([])
-
-      setRefreshKey((current) => current + 1)
-
-    } catch (error) {
-      console.error('Alert action failed:', error)
-
-      setActionMessage(
-        'Action failed. Check the alert status, assignment, and review notes.'
-      )
-    } finally {
-      setActionLoading(false)
-    }
+  // Assignment does not require notes.
+  // All review actions require investigation notes.
+  if (action !== 'assign' && !reviewNotes.trim()) {
+    setActionMessage('Please enter review notes first.')
+    return
   }
+
+  try {
+    setActionLoading(true)
+    setActionMessage('')
+    setDetailError('')
+
+    if (action === 'assign') {
+      await dashboardService.assignAlert(selectedAlert.alertId)
+
+    } else if (action === 'approve') {
+      await dashboardService.approveAlert(
+        selectedAlert.alertId,
+        reviewNotes.trim()
+      )
+
+    } else if (action === 'reject') {
+      await dashboardService.rejectAlert(
+        selectedAlert.alertId,
+        reviewNotes.trim()
+      )
+
+    } else if (action === 'confirm-block') {
+      await dashboardService.confirmBlockedAlert(
+        selectedAlert.alertId,
+        reviewNotes.trim()
+      )
+    }
+
+    const successMessages = {
+      assign: 'Alert assigned successfully.',
+      approve: 'Transaction approved successfully.',
+      reject: 'Transaction rejected successfully.',
+      'confirm-block': 'Blocked transaction confirmed. Alert resolved successfully.',
+    }
+
+    setActionMessage(successMessages[action])
+
+    setReviewNotes('')
+    setSelectedAlert(null)
+    setReviewHistory([])
+
+    setRefreshKey((current) => current + 1)
+
+  } catch (error) {
+    console.error('Alert action failed:', error)
+
+    setActionMessage(
+      'Action failed. Check the alert status, assignment, and review notes.'
+    )
+  } finally {
+    setActionLoading(false)
+  }
+}
 
   // Search within the currently loaded server-side page.
 const filteredAlerts = dashboardAlerts.filter((alert) => {
@@ -1044,6 +1051,19 @@ if (
                 >
                   Reject Transaction
                 </button>
+                <button
+  className="secondary-button"
+  disabled={
+    actionLoading ||
+    detailLoading ||
+    historyLoading ||
+    selectedAlert.decision !== 'BLOCK' ||
+    selectedAlert.alertStatus !== 'UNDER_REVIEW'
+  }
+  onClick={() => handleAlertAction('confirm-block')}
+>
+  Confirm Block
+</button>
 
               </div>
 
@@ -1110,6 +1130,25 @@ if (
               <div className="stat-footer warning">
                 <Clock size={15} />
                 <span>Require attention</span>
+              </div>
+            </div>
+
+                      <div className="stat-card">
+              <div className="stat-top">
+                <span>Unassigned Alerts</span>
+
+                <div className="stat-icon orange">
+                  <AlertTriangle size={20} />
+                </div>
+              </div>
+
+              <h3>
+                {loading ? '...' : summary?.unassignedAlerts ?? 0}
+              </h3>
+
+              <div className="stat-footer warning">
+                <Clock size={15} />
+                <span>Awaiting analyst assignment</span>
               </div>
             </div>
 

@@ -38,6 +38,7 @@ public interface FraudAlertRepository extends
     // Dashboard: alert statistics
 
     long countByStatus(FraudAlertStatus status);
+    long countByAssignedToIsNull();
 
     long countByAssessment_RiskScoreGreaterThanEqual(
             Integer riskScore

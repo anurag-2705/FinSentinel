@@ -181,14 +181,16 @@ export default function Analysts() {
           }}
         >
           <thead>
-            <tr>
-              <th style={tableHeaderStyle}>Analyst</th>
-              <th style={tableHeaderStyle}>Total Assigned</th>
-              <th style={tableHeaderStyle}>Open</th>
-              <th style={tableHeaderStyle}>Under Review</th>
-              <th style={tableHeaderStyle}>Resolved</th>
-            </tr>
-          </thead>
+  <tr>
+    <th style={tableHeaderStyle}>Analyst</th>
+    <th style={tableHeaderStyle}>Total Assigned</th>
+    <th style={tableHeaderStyle}>Open</th>
+    <th style={tableHeaderStyle}>Under Review</th>
+    <th style={tableHeaderStyle}>Resolved</th>
+    <th style={tableHeaderStyle}>Workload Score</th>
+    <th style={tableHeaderStyle}>Recommendation</th>
+  </tr>
+</thead>
 
           <tbody>
             {workload.map((analyst) => (
@@ -244,13 +246,46 @@ export default function Analysts() {
                     {analyst.resolvedAlerts}
                   </span>
                 </td>
+                <td style={tableCellStyle}>
+  <span
+    style={{
+      background: analyst.workloadScore <= 3 ? "#dcfce7" : "#fef3c7",
+      color: analyst.workloadScore <= 3 ? "#166534" : "#92400e",
+      padding: "5px 10px",
+      borderRadius: "20px",
+      fontWeight: 600,
+    }}
+  >
+    {analyst.workloadScore}
+  </span>
+</td>
+
+<td style={tableCellStyle}>
+  {analyst.recommended ? (
+    <span
+      style={{
+        background: "#dcfce7",
+        color: "#166534",
+        padding: "5px 10px",
+        borderRadius: "20px",
+        fontWeight: 600,
+      }}
+    >
+      Recommended
+    </span>
+  ) : (
+    <span style={{ color: "#94a3b8" }}>
+      —
+    </span>
+  )}
+</td>
               </tr>
             ))}
 
             {workload.length === 0 && (
               <tr>
                 <td
-                  colSpan={5}
+                  colSpan={7}
                   style={{
                     ...tableCellStyle,
                     textAlign: "center",
@@ -296,6 +331,7 @@ export default function Analysts() {
               <th style={tableHeaderStyle}>Assigned</th>
               <th style={tableHeaderStyle}>Approved</th>
               <th style={tableHeaderStyle}>Rejected</th>
+              <th style={tableHeaderStyle}>Confirmed Block</th>
               <th style={tableHeaderStyle}>Completed</th>
               <th style={tableHeaderStyle}>Resolution Rate</th>
             </tr>
@@ -321,6 +357,10 @@ export default function Analysts() {
                 <td style={tableCellStyle}>
                   {analyst.rejectedAlerts}
                 </td>
+
+                <td style={tableCellStyle}>
+  {analyst.confirmedBlockedAlerts}
+</td>
 
                 <td style={tableCellStyle}>
                   {analyst.completedInvestigations}

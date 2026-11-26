@@ -227,32 +227,40 @@ public class FraudDetectionService {
 
         // Rule 5: High spending velocity within 60 minutes.
 
-        FraudRule highVelocityRule =
-                getEnabledRule("HIGH_VELOCITY_SPENDING");
+FraudRule highVelocityRule =
+        getEnabledRule("HIGH_VELOCITY_SPENDING");
 
-        if (highVelocityRule != null) {
+if (highVelocityRule != null) {
 
-            Instant highVelocityWindowStart =
-                    assessmentTime.minus(
-                            HIGH_VELOCITY_WINDOW_MINUTES,
-                            ChronoUnit.MINUTES
-                    );
+    Instant highVelocityWindowStart =
+            assessmentTime.minus(
+                    HIGH_VELOCITY_WINDOW_MINUTES,
+                    ChronoUnit.MINUTES
+            );
 
-            BigDecimal recentTransactionAmount =
-                    transactionRepository.sumTransactionAmountsSince(
-                            userId,
-                            highVelocityWindowStart
-                    );
+    BigDecimal previousOutgoingSpending =
+            transactionRepository.sumTransactionAmountsSince(
+                    userId,
+                    highVelocityWindowStart
+            );
 
-            if (recentTransactionAmount != null
-                    && recentTransactionAmount.compareTo(
-                            HIGH_VELOCITY_AMOUNT_THRESHOLD
-                    ) >= 0) {
+    if (previousOutgoingSpending == null) {
+        previousOutgoingSpending = BigDecimal.ZERO;
+    }
 
-                triggeredRules.add(highVelocityRule);
-                riskScore += highVelocityRule.getRiskScore();
-            }
-        }
+    BigDecimal currentTransactionAmount = amount;
+
+    BigDecimal totalRecentSpending =
+            previousOutgoingSpending.add(currentTransactionAmount);
+
+    if (totalRecentSpending.compareTo(
+            HIGH_VELOCITY_AMOUNT_THRESHOLD
+    ) >= 0) {
+
+        triggeredRules.add(highVelocityRule);
+        riskScore += highVelocityRule.getRiskScore();
+    }
+}
 
         // Rule 6: Unusual transaction amount.
 

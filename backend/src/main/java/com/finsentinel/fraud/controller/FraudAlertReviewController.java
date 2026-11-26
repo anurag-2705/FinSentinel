@@ -5,7 +5,6 @@ import com.finsentinel.fraud.dto.FraudAlertReviewResponse;
 import com.finsentinel.fraud.dto.FraudReviewRequest;
 import com.finsentinel.fraud.entity.FraudAlertStatus;
 import com.finsentinel.fraud.service.FraudAlertReviewService;
-
 import com.finsentinel.fraud.service.FraudAlertExplanationService;
 import com.finsentinel.ml.dto.MLExplanationResponse;
 
@@ -23,15 +22,15 @@ import java.util.UUID;
 public class FraudAlertReviewController {
 
     private final FraudAlertReviewService fraudAlertReviewService;
-private final FraudAlertExplanationService fraudAlertExplanationService;
+    private final FraudAlertExplanationService fraudAlertExplanationService;
 
     public FraudAlertReviewController(
-        FraudAlertReviewService fraudAlertReviewService,
-        FraudAlertExplanationService fraudAlertExplanationService
-) {
-    this.fraudAlertReviewService = fraudAlertReviewService;
-    this.fraudAlertExplanationService = fraudAlertExplanationService;
-}
+            FraudAlertReviewService fraudAlertReviewService,
+            FraudAlertExplanationService fraudAlertExplanationService
+    ) {
+        this.fraudAlertReviewService = fraudAlertReviewService;
+        this.fraudAlertExplanationService = fraudAlertExplanationService;
+    }
 
     @GetMapping
     public ResponseEntity<List<FraudAlertResponse>> getAlerts(
@@ -52,13 +51,13 @@ private final FraudAlertExplanationService fraudAlertExplanationService;
     }
 
     @GetMapping("/{alertId}/explanation")
-public ResponseEntity<MLExplanationResponse> getAlertExplanation(
-        @PathVariable UUID alertId
-) {
-    return ResponseEntity.ok(
-            fraudAlertExplanationService.getExplanation(alertId)
-    );
-}
+    public ResponseEntity<MLExplanationResponse> getAlertExplanation(
+            @PathVariable UUID alertId
+    ) {
+        return ResponseEntity.ok(
+                fraudAlertExplanationService.getExplanation(alertId)
+        );
+    }
 
     // Get complete review history of a fraud alert.
     @GetMapping("/{alertId}/reviews")
@@ -112,6 +111,24 @@ public ResponseEntity<MLExplanationResponse> getAlertExplanation(
 
         return ResponseEntity.ok(
                 fraudAlertReviewService.rejectAlert(
+                        alertId,
+                        analystId,
+                        request.notes()
+                )
+        );
+    }
+
+    // Confirm an automatically BLOCKed transaction during analyst review.
+    @PostMapping("/{alertId}/confirm-block")
+    public ResponseEntity<FraudAlertResponse> confirmBlockedAlert(
+            @PathVariable UUID alertId,
+            @Valid @RequestBody FraudReviewRequest request,
+            Authentication authentication
+    ) {
+        UUID analystId = (UUID) authentication.getPrincipal();
+
+        return ResponseEntity.ok(
+                fraudAlertReviewService.confirmBlockedAlert(
                         alertId,
                         analystId,
                         request.notes()

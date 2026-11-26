@@ -9,6 +9,7 @@ export interface FraudDashboardActivity {
 export interface FraudDashboardSummary {
   totalAlerts: number;
   openAlerts: number;
+  unassignedAlerts: number;
   underReviewAlerts: number;
   resolvedAlerts: number;
   dismissedAlerts: number;
@@ -24,6 +25,8 @@ export interface AnalystWorkload {
   openAssignedAlerts: number;
   underReviewAlerts: number;
   resolvedAlerts: number;
+  workloadScore: number;
+  recommended: boolean;
 }
 
 export interface FraudAlert {
@@ -136,6 +139,7 @@ export interface FraudAnalystPerformance {
   totalAssigned: number;
   approvedAlerts: number;
   rejectedAlerts: number;
+confirmedBlockedAlerts: number;
   completedInvestigations: number;
   resolutionRate: number;
 }
@@ -275,4 +279,14 @@ async getAlertExplanation(
     );
     return response.data;
   },
+async confirmBlockedAlert(
+  alertId: string,
+  notes: string
+): Promise<FraudAlert> {
+  const response = await api.post<FraudAlert>(
+    `/api/v1/fraud/alerts/${alertId}/confirm-block`,
+    { notes }
+  );
+  return response.data;
+},
 };

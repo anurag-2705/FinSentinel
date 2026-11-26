@@ -493,6 +493,69 @@ public class FraudAlertReviewService {
         return toResponse(savedAlert);
     }
 
+@Transactional
+public FraudAlertResponse confirmBlockedAlert(
+        UUID alertId,
+        UUID analystId,
+        String notes
+) {
+
+    FraudAlert alert = fraudAlertRepository.findByIdForUpdate(alertId)
+            .orElseThrow(() ->
+                    new IllegalArgumentException("Fraud alert not found")
+            );
+
+    AppUser analyst = getAnalyst(analystId);
+
+    validateAssignedAnalyst(alert, analystId);
+
+    if (alert.getStatus() != FraudAlertStatus.UNDER_REVIEW) {
+        throw new IllegalStateException(
+                "Alert must be under review before confirmation"
+        );
+    }
+
+    if (alert.getAssessment().getDecision() != FraudDecision.BLOCK) {
+        throw new IllegalStateException(
+                "Only BLOCK transactions can use this workflow"
+        );
+    }
+
+    FinancialTransaction transaction =
+            transactionRepository.findByIdForUpdate(
+                    alert.getAssessment().getTransaction().getId()
+            ).orElseThrow(() ->
+                    new IllegalArgumentException("Transaction not found")
+            );
+
+    if (transaction.getStatus() != TransactionStatus.FAILED) {
+        throw new IllegalStateException(
+                "Blocked transaction must have FAILED status"
+        );
+    }
+
+    if (ledgerEntryRepository.existsByTransaction_Id(transaction.getId())) {
+        throw new IllegalStateException(
+                "Blocked transaction unexpectedly has ledger entries"
+        );
+    }
+
+    alert.setStatus(FraudAlertStatus.RESOLVED);
+    alert.setAnalystNotes(notes);
+    alert.setResolvedAt(Instant.now());
+
+    FraudAlert savedAlert = fraudAlertRepository.save(alert);
+
+    recordReview(
+            savedAlert,
+            analyst,
+            FraudReviewAction.CONFIRMED_BLOCK,
+            notes
+    );
+
+    return toResponse(savedAlert);
+}
+
     private void validateSufficientBalance(
             UUID userId,
             Account account,

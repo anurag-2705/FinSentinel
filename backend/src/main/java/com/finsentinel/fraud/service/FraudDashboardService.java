@@ -147,6 +147,9 @@ private final FinancialTransactionRepository financialTransactionRepository;
                 FraudAlertStatus.OPEN
         );
 
+        long unassignedAlerts =
+        fraudAlertRepository.countByAssignedToIsNull();
+
         long underReviewAlerts = fraudAlertRepository.countByStatus(
                 FraudAlertStatus.UNDER_REVIEW
         );
@@ -175,15 +178,16 @@ private final FinancialTransactionRepository financialTransactionRepository;
                 );
 
         return new FraudDashboardSummaryResponse(
-                totalAlerts,
-                openAlerts,
-                underReviewAlerts,
-                resolvedAlerts,
-                dismissedAlerts,
-                highRiskAlerts,
-                pendingTransactions,
-                totalPendingAmount
-        );
+        totalAlerts,
+        openAlerts,
+        unassignedAlerts,
+        underReviewAlerts,
+        resolvedAlerts,
+        dismissedAlerts,
+        highRiskAlerts,
+        pendingTransactions,
+        totalPendingAmount
+);
     }
 
 
@@ -414,6 +418,7 @@ public List<FraudAnalystPerformanceResponse> getAnalystPerformance(String period
                 long totalAssigned;
                 long approved;
                 long rejected;
+                long confirmedBlocked;
 
                 if ("ALL".equalsIgnoreCase(period)) {
 
@@ -433,6 +438,12 @@ public List<FraudAnalystPerformanceResponse> getAnalystPerformance(String period
                             fraudAlertReviewRepository.countByAnalyst_IdAndAction(
                                     analystId,
                                     FraudReviewAction.REJECTED
+                            );
+
+                    confirmedBlocked =
+                            fraudAlertReviewRepository.countByAnalyst_IdAndAction(
+                                    analystId,
+                                    FraudReviewAction.CONFIRMED_BLOCK
                             );
 
                 } else {
@@ -463,9 +474,18 @@ public List<FraudAnalystPerformanceResponse> getAnalystPerformance(String period
                                             range.start(),
                                             range.end()
                                     );
+
+                    confirmedBlocked =
+                            fraudAlertReviewRepository
+                                    .countByAnalyst_IdAndActionAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(
+                                            analystId,
+                                            FraudReviewAction.CONFIRMED_BLOCK,
+                                            range.start(),
+                                            range.end()
+                                    );
                 }
 
-                long completed = approved + rejected;
+                long completed = approved + rejected + confirmedBlocked;
 
                 double resolutionRate = totalAssigned == 0
                         ? 0.0
@@ -477,61 +497,95 @@ public List<FraudAnalystPerformanceResponse> getAnalystPerformance(String period
                         totalAssigned,
                         approved,
                         rejected,
+                        confirmedBlocked,
                         completed,
                         Math.round(resolutionRate * 100.0) / 100.0
                 );
             })
             .toList();
-}   
+}  
 
- // Analyst workload
+ public List<FraudAnalystWorkloadResponse> getAnalystWorkload() {
 
-    public List<FraudAnalystWorkloadResponse> getAnalystWorkload() {
+    List<UserRole> analysts =
+            userRoleRepository.findByRole_Name(FRAUD_ANALYST_ROLE);
 
-        List<UserRole> analysts =
-                userRoleRepository.findByRole_Name(FRAUD_ANALYST_ROLE);
+    List<FraudAnalystWorkloadResponse> workload =
+            analysts.stream()
+                    .map(userRole -> {
 
-        return analysts.stream()
-                .map(userRole -> {
+                        AppUser analyst = userRole.getUser();
+                        UUID analystId = analyst.getId();
 
-                    AppUser analyst = userRole.getUser();
+                        long totalAssigned =
+                                fraudAlertRepository.countByAssignedTo_Id(
+                                        analystId
+                                );
 
-                    UUID analystId = analyst.getId();
+                        long openAssigned =
+                                fraudAlertRepository.countByAssignedTo_IdAndStatus(
+                                        analystId,
+                                        FraudAlertStatus.OPEN
+                                );
 
-                    long totalAssigned =
-                            fraudAlertRepository.countByAssignedTo_Id(
-                                    analystId
-                            );
+                        long underReview =
+                                fraudAlertRepository.countByAssignedTo_IdAndStatus(
+                                        analystId,
+                                        FraudAlertStatus.UNDER_REVIEW
+                                );
 
-                    long openAssigned =
-                            fraudAlertRepository.countByAssignedTo_IdAndStatus(
-                                    analystId,
-                                    FraudAlertStatus.OPEN
-                            );
+                        long resolved =
+                                fraudAlertRepository.countByAssignedTo_IdAndStatus(
+                                        analystId,
+                                        FraudAlertStatus.RESOLVED
+                                );
 
-                    long underReview =
-                            fraudAlertRepository.countByAssignedTo_IdAndStatus(
-                                    analystId,
-                                    FraudAlertStatus.UNDER_REVIEW
-                            );
+                        long workloadScore =
+                                openAssigned + (underReview * 2);
 
-                    long resolved =
-                            fraudAlertRepository.countByAssignedTo_IdAndStatus(
-                                    analystId,
-                                    FraudAlertStatus.RESOLVED
-                            );
+                        return new FraudAnalystWorkloadResponse(
+                                analystId,
+                                analyst.getEmail(),
+                                totalAssigned,
+                                openAssigned,
+                                underReview,
+                                resolved,
+                                workloadScore,
+                                false
+                        );
+                    })
+                    .toList();
 
-                    return new FraudAnalystWorkloadResponse(
-                            analystId,
-                            analyst.getEmail(),
-                            totalAssigned,
-                            openAssigned,
-                            underReview,
-                            resolved
-                    );
-                })
-                .toList();
+    FraudAnalystWorkloadResponse recommendedAnalyst =
+            workload.stream()
+                    .min(
+                            java.util.Comparator.comparingLong(
+                                    FraudAnalystWorkloadResponse::workloadScore
+                            )
+                    )
+                    .orElse(null);
+
+    if (recommendedAnalyst == null) {
+        return workload;
     }
+
+    return workload.stream()
+            .map(analyst ->
+                    new FraudAnalystWorkloadResponse(
+                            analyst.analystId(),
+                            analyst.analystEmail(),
+                            analyst.totalAssignedAlerts(),
+                            analyst.openAssignedAlerts(),
+                            analyst.underReviewAlerts(),
+                            analyst.resolvedAlerts(),
+                            analyst.workloadScore(),
+                            analyst.analystId().equals(
+                                    recommendedAnalyst.analystId()
+                            )
+                    )
+            )
+            .toList();
+}
 
     // Paginated and filtered fraud alerts
 

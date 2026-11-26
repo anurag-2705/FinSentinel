@@ -642,6 +642,7 @@ function FraudAnalytics() {
                     <th>Assigned</th>
                     <th>Approved</th>
                     <th>Rejected</th>
+                    <th>Confirmed Block</th>
                     <th>Completed</th>
                     <th>Resolution Rate</th>
                   </tr>
@@ -654,6 +655,7 @@ function FraudAnalytics() {
                       <td>{analyst.totalAssigned}</td>
                       <td>{analyst.approvedAlerts}</td>
                       <td>{analyst.rejectedAlerts}</td>
+                      <td>{analyst.confirmedBlockedAlerts}</td>
                       <td>{analyst.completedInvestigations}</td>
                       <td>{analyst.resolutionRate.toFixed(2)}%</td>
                     </tr>
@@ -661,7 +663,7 @@ function FraudAnalytics() {
 
                   {analystPerformance.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="analytics-empty">
+                      <td colSpan={7} className="analytics-empty">
                         No analyst performance records available.
                       </td>
                     </tr>

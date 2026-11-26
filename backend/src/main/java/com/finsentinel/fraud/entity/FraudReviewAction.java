@@ -4,6 +4,7 @@ public enum FraudReviewAction {
 
     ASSIGNED,
     APPROVED,
-    REJECTED
+    REJECTED,
+    CONFIRMED_BLOCK
 
 }
